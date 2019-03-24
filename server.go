@@ -126,6 +126,8 @@ type Server struct {
 }
 
 func (s *Server) Start() {
+	ticker := time.NewTicker(time.Minute * 5)
+	go s.Pinger(ticker)
 	var clientID uint64
 
 	certificate, err := tls.LoadX509KeyPair(s.CertificatePath, s.CertificatePath)
@@ -162,6 +164,20 @@ func (s *Server) Start() {
 		}
 
 		go client.ClientHandler()
+	}
+
+	ticker.Stop()
+}
+
+func (s *Server) Pinger(ticker *time.Ticker) {
+	for _ = range ticker.C {
+		for _, channel := range s.Channels {
+			for client := range channel {
+				client.Send(Msg{
+					"type": "ping",
+				})
+			}
+		}
 	}
 }
 
