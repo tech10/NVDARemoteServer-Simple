@@ -16,6 +16,13 @@ import (
 type Msg map[string]interface{}
 type Channel map[*Client]struct{}
 
+type Handshake struct {
+	Type            string
+	Version         float64
+	Channel         string
+	Connection_type string
+}
+
 type Client struct {
 	net.Conn
 	Id              uint64
@@ -37,29 +44,22 @@ func (c *Client) ClientHandler() {
 			break
 		}
 
-		data := make(Msg)
-		if err := json.Unmarshal(buffer[:n], &data); err != nil {
+		if c.Key != "" {
+			if json.Valid(buffer[:n]) {
+				c.Srv.SendBytesToChannel(c, buffer[:n])
+			}
+			continue
+		}
+
+		data := new(Handshake)
+		if err := json.Unmarshal(buffer[:n], data); err != nil {
 			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.Id, err)
 			continue
 		}
 
-		if _, ok := data["type"].(string); !ok {
-			c.Srv.Log.Printf("No \"Type\" key for client %d\n", c.Id)
-			break
-		}
-
-		if c.Key != "" {
-			if _, ok := data["origin"]; !ok {
-				data["origin"] = c.Id
-			}
-
-			c.Srv.SendToChannel(c, data)
-			continue
-		}
-
-		switch data["type"] {
+		switch data.Type {
 		case "protocol_version":
-			c.ProtocolVersion, _ = data["version"].(float64)
+			c.ProtocolVersion = data.Version
 		case "join":
 			c.Srv.AddClient(c, data)
 		case "generate_key":
@@ -99,18 +99,15 @@ func (c *Client) AsMap() Msg {
 }
 
 func (c *Client) Send(data Msg) {
-	if c.ProtocolVersion <= 1 {
-		delete(data, "origin")
-		delete(data, "clients")
-		delete(data, "client")
-	}
-
 	buffer, err := json.Marshal(data)
 	if err != nil {
 		c.Srv.Log.Println("JSON error:", err)
 		return
 	}
+	c.SendBytes(buffer)
+}
 
+func (c *Client) SendBytes(buffer []byte) {
 	buffer = append(buffer, '\n')
 	if _, err := c.Write(buffer); err != nil {
 		c.Srv.Log.Println("Error when sending data to client", c.Id, "-", err)
@@ -191,15 +188,23 @@ func (s *Server) SendToChannel(client *Client, data Msg) {
 	s.RUnlock()
 }
 
-func (s *Server) AddClient(client *Client, data Msg) {
-	client.Key, _ = data["channel"].(string)
-	if client.Key == "" {
+func (s *Server) SendBytesToChannel(client *Client, buffer []byte) {
+	s.RLock()
+	for r := range s.Channels[client.Key] {
+		if client != r {
+			r.SendBytes(buffer)
+		}
+	}
+	s.RUnlock()
+}
+
+func (s *Server) AddClient(client *Client, data *Handshake) {
+	if data.Channel == "" {
 		return
 	}
 
-	if connection_type, ok := data["connection_type"].(string); ok {
-		client.ConnectionType = connection_type
-	}
+	client.Key = data.Channel
+	client.ConnectionType = data.Connection_type
 
 	s.Lock()
 	if s.Channels[client.Key] == nil {
