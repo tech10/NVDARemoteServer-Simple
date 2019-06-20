@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
 	"flag"
@@ -34,34 +35,31 @@ type Client struct {
 
 func (c *Client) ClientHandler() {
 	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.RemoteAddr())
-	buffer := make([]byte, 1024*32)
+	buffer := bufio.NewReaderSize(c, 1024*32)
 
 	for {
-		n, err := c.Read(buffer)
-
-		if err != nil {
+		line, err := buffer.ReadSlice('\n')
+		if err != nil && err != bufio.ErrBufferFull {
 			c.Srv.Log.Printf("Error receiving data from client %d: %s\n", c.Id, err)
 			break
 		}
 
 		if c.Key != "" {
-			if json.Valid(buffer[:n]) {
-				c.Srv.SendBytesToChannel(c, buffer[:n])
-			}
+			c.Srv.SendLineToChannel(c, line)
 			continue
 		}
 
-		data := new(Handshake)
-		if err := json.Unmarshal(buffer[:n], data); err != nil {
+		handshake := new(Handshake)
+		if err := json.Unmarshal(line, handshake); err != nil {
 			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.Id, err)
-			continue
+			break
 		}
 
-		switch data.Type {
+		switch handshake.Type {
 		case "protocol_version":
-			c.ProtocolVersion = data.Version
+			c.ProtocolVersion = handshake.Version
 		case "join":
-			c.Srv.AddClient(c, data)
+			c.Srv.AddClient(c, handshake)
 		case "generate_key":
 			c.Generate_key()
 		}
@@ -83,7 +81,7 @@ func (c *Client) Generate_key() {
 		key = strconv.Itoa(rand.Intn(89999999) + 10000000)
 	}
 
-	c.Send(Msg{
+	c.SendMsg(Msg{
 		"type": "generate_key",
 		"key":  key,
 	})
@@ -98,18 +96,18 @@ func (c *Client) AsMap() Msg {
 	}
 }
 
-func (c *Client) Send(data Msg) {
-	buffer, err := json.Marshal(data)
+func (c *Client) SendMsg(msg Msg) {
+	line, err := json.Marshal(msg)
 	if err != nil {
-		c.Srv.Log.Println("JSON error:", err)
-		return
+		panic(err)
 	}
-	c.SendBytes(buffer)
+
+	line = append(line, '\n')
+	c.SendLine(line)
 }
 
-func (c *Client) SendBytes(buffer []byte) {
-	buffer = append(buffer, '\n')
-	if _, err := c.Write(buffer); err != nil {
+func (c *Client) SendLine(line []byte) {
+	if _, err := c.Write(line); err != nil {
 		c.Srv.Log.Println("Error when sending data to client", c.Id, "-", err)
 	}
 }
@@ -170,7 +168,7 @@ func (s *Server) Pinger(ticker *time.Ticker) {
 	for _ = range ticker.C {
 		for _, channel := range s.Channels {
 			for client := range channel {
-				client.Send(Msg{
+				client.SendMsg(Msg{
 					"type": "ping",
 				})
 			}
@@ -178,33 +176,33 @@ func (s *Server) Pinger(ticker *time.Ticker) {
 	}
 }
 
-func (s *Server) SendToChannel(client *Client, data Msg) {
+func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
+	line, err := json.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+
+	line = append(line, '\n')
+	s.SendLineToChannel(client, line)
+}
+
+func (s *Server) SendLineToChannel(client *Client, line []byte) {
 	s.RLock()
 	for r := range s.Channels[client.Key] {
 		if client != r {
-			r.Send(data)
+			r.SendLine(line)
 		}
 	}
 	s.RUnlock()
 }
 
-func (s *Server) SendBytesToChannel(client *Client, buffer []byte) {
-	s.RLock()
-	for r := range s.Channels[client.Key] {
-		if client != r {
-			r.SendBytes(buffer)
-		}
-	}
-	s.RUnlock()
-}
-
-func (s *Server) AddClient(client *Client, data *Handshake) {
-	if data.Channel == "" {
+func (s *Server) AddClient(client *Client, handshake *Handshake) {
+	if handshake.Channel == "" {
 		return
 	}
 
-	client.Key = data.Channel
-	client.ConnectionType = data.Connection_type
+	client.Key = handshake.Channel
+	client.ConnectionType = handshake.Connection_type
 
 	s.Lock()
 	if s.Channels[client.Key] == nil {
@@ -223,14 +221,14 @@ func (s *Server) AddClient(client *Client, data *Handshake) {
 	}
 	s.RUnlock()
 
-	client.Send(Msg{
+	client.SendMsg(Msg{
 		"type":     "channel_joined",
 		"channel":  client.Key,
 		"user_ids": clientsID,
 		"clients":  clients,
 	})
 
-	s.SendToChannel(client, Msg{
+	s.SendMsgToChannel(client, Msg{
 		"type":    "client_joined",
 		"user_id": client.Id,
 		"client":  client.AsMap(),
@@ -240,7 +238,7 @@ func (s *Server) AddClient(client *Client, data *Handshake) {
 }
 
 func (s *Server) RemoveClient(client *Client) {
-	s.SendToChannel(client, Msg{
+	s.SendMsgToChannel(client, Msg{
 		"type":    "client_left",
 		"user_id": client.Id,
 		"client":  client.AsMap(),
