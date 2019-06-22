@@ -25,7 +25,7 @@ type Handshake struct {
 }
 
 type Client struct {
-	net.Conn
+	Conn            net.Conn
 	Id              uint64
 	Srv             *Server
 	Key             string
@@ -33,9 +33,9 @@ type Client struct {
 	ConnectionType  string
 }
 
-func (c *Client) ClientHandler() {
-	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.RemoteAddr())
-	buffer := bufio.NewReaderSize(c, 1024*32)
+func (c *Client) Handler() {
+	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.Conn.RemoteAddr())
+	buffer := bufio.NewReaderSize(c.Conn, 1024*32)
 
 	for {
 		line, err := buffer.ReadSlice('\n')
@@ -69,8 +69,8 @@ func (c *Client) ClientHandler() {
 		c.Srv.RemoveClient(c)
 	}
 
-	c.Close()
-	c.Srv.Log.Printf("Disconnected client %d %s\n", c.Id, c.RemoteAddr())
+	c.Conn.Close()
+	c.Srv.Log.Printf("Disconnected client %d %s\n", c.Id, c.Conn.RemoteAddr())
 }
 
 func (c *Client) Generate_key() {
@@ -107,7 +107,7 @@ func (c *Client) SendMsg(msg Msg) {
 }
 
 func (c *Client) SendLine(line []byte) {
-	if _, err := c.Write(line); err != nil {
+	if _, err := c.Conn.Write(line); err != nil {
 		c.Srv.Log.Println("Error when sending data to client", c.Id, "-", err)
 	}
 }
@@ -158,7 +158,7 @@ func (s *Server) Start() {
 			Srv:  s,
 		}
 
-		go client.ClientHandler()
+		go client.Handler()
 	}
 
 	ticker.Stop()
