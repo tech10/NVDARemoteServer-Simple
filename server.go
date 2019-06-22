@@ -36,12 +36,13 @@ type Client struct {
 func (c *Client) Handler() {
 	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.Conn.RemoteAddr())
 	buffer := bufio.NewReaderSize(c.Conn, 1024*32)
+	defer c.Close()
 
 	for {
 		line, err := buffer.ReadSlice('\n')
 		if err != nil && err != bufio.ErrBufferFull {
 			c.Srv.Log.Printf("Error receiving data from client %d: %s\n", c.Id, err)
-			break
+			return
 		}
 
 		if c.Key != "" {
@@ -52,7 +53,7 @@ func (c *Client) Handler() {
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
 			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.Id, err)
-			break
+			return
 		}
 
 		switch handshake.Type {
@@ -62,9 +63,13 @@ func (c *Client) Handler() {
 			c.Srv.AddClient(c, handshake)
 		case "generate_key":
 			c.Generate_key()
+		default:
+			return
 		}
 	}
+}
 
+func (c *Client) Close() {
 	if c.Key != "" {
 		c.Srv.RemoveClient(c)
 	}
