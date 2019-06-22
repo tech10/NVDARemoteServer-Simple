@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+const (
+	BufSize = 1024 * 4
+)
+
 type Msg map[string]interface{}
 type Channel map[*Client]struct{}
 
@@ -35,7 +39,7 @@ type Client struct {
 
 func (c *Client) Handler() {
 	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.Conn.RemoteAddr())
-	buffer := bufio.NewReaderSize(c.Conn, 1024*32)
+	buffer := bufio.NewReaderSize(c.Conn, BufSize)
 	defer c.Close()
 
 	for {
