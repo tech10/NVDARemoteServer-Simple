@@ -155,8 +155,8 @@ func (s *Server) Start() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			s.Log.Printf("Client connection error: %s\n", err)
-			continue
+			s.Log.Printf("Server error: %s\n", err)
+			break
 		}
 
 		clientID++
