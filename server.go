@@ -30,7 +30,7 @@ type Handshake struct {
 
 type Client struct {
 	Conn            net.Conn
-	Id              uint64
+	ID              uint
 	Srv             *Server
 	Key             string
 	ProtocolVersion float64
@@ -38,14 +38,14 @@ type Client struct {
 }
 
 func (c *Client) Handler() {
-	c.Srv.Log.Printf("Connected client %d %s\n", c.Id, c.Conn.RemoteAddr())
+	c.Srv.Log.Printf("Connected client %d %s\n", c.ID, c.Conn.RemoteAddr())
 	buffer := bufio.NewReaderSize(c.Conn, BufSize)
 	defer c.Close()
 
 	for {
 		line, err := buffer.ReadSlice('\n')
 		if err != nil && err != bufio.ErrBufferFull {
-			c.Srv.Log.Printf("Error receiving data from client %d: %s\n", c.Id, err)
+			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
 			return
 		}
 
@@ -56,7 +56,7 @@ func (c *Client) Handler() {
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
-			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.Id, err)
+			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.ID, err)
 			return
 		}
 
@@ -79,7 +79,7 @@ func (c *Client) Close() {
 	}
 
 	c.Conn.Close()
-	c.Srv.Log.Printf("Disconnected client %d %s\n", c.Id, c.Conn.RemoteAddr())
+	c.Srv.Log.Printf("Disconnected client %d %s\n", c.ID, c.Conn.RemoteAddr())
 }
 
 func (c *Client) Generate_key() {
@@ -95,12 +95,12 @@ func (c *Client) Generate_key() {
 		"key":  key,
 	})
 
-	c.Srv.Log.Println("For client", c.Id, "generated key", key)
+	c.Srv.Log.Println("For client", c.ID, "generated key", key)
 }
 
 func (c *Client) AsMap() Msg {
 	return Msg{
-		"id":              c.Id,
+		"id":              c.ID,
 		"connection_type": c.ConnectionType,
 	}
 }
@@ -117,43 +117,52 @@ func (c *Client) SendMsg(msg Msg) {
 
 func (c *Client) SendLine(line []byte) {
 	if _, err := c.Conn.Write(line); err != nil {
-		c.Srv.Log.Println("Error when sending data to client", c.Id, "-", err)
+		c.Srv.Log.Printf("Sending data error to client %d: %s\n", c.ID, err)
 	}
 }
 
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return nil, err
+	}
+	tc.SetKeepAlive(true)
+	tc.SetKeepAlivePeriod(2 * time.Minute)
+	return tc, nil
+}
+
 type Server struct {
-	Addr            string
-	CertificatePath string
-	Log             *log.Logger
+	Addr        string
+	Certificate tls.Certificate
+	Log         *log.Logger
 	sync.RWMutex
 	Channels map[string]Channel
 }
 
 func (s *Server) Start() {
-	ticker := time.NewTicker(time.Minute * 5)
-	go s.Pinger(ticker)
-	var clientID uint64
+	var clientID uint
 
-	certificate, err := tls.LoadX509KeyPair(s.CertificatePath, s.CertificatePath)
-	if err != nil {
-		s.Log.Fatalf("Certificate load error: %s\n", err)
-	}
-
-	TLSConfig := &tls.Config{
-		Certificates:             []tls.Certificate{certificate},
+	config := &tls.Config{
+		Certificates:             []tls.Certificate{s.Certificate},
 		PreferServerCipherSuites: true,
 		MinVersion:               tls.VersionTLS12,
 	}
 
-	listener, err := tls.Listen("tcp", s.Addr, TLSConfig)
+	ln, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		s.Log.Fatalf("Listener error on %s: %s\n", s.Addr, err)
 	}
-	defer listener.Close()
+
+	ln = tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, config)
+	defer ln.Close()
 	s.Log.Printf("Server successfully started on \"%s\"\n", s.Addr)
 
 	for {
-		conn, err := listener.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			s.Log.Printf("Server error: %s\n", err)
 			break
@@ -163,25 +172,11 @@ func (s *Server) Start() {
 
 		client := &Client{
 			Conn: conn,
-			Id:   clientID,
+			ID:   clientID,
 			Srv:  s,
 		}
 
 		go client.Handler()
-	}
-
-	ticker.Stop()
-}
-
-func (s *Server) Pinger(ticker *time.Ticker) {
-	for _ = range ticker.C {
-		for _, channel := range s.Channels {
-			for client := range channel {
-				client.SendMsg(Msg{
-					"type": "ping",
-				})
-			}
-		}
 	}
 }
 
@@ -221,12 +216,12 @@ func (s *Server) AddClient(client *Client, handshake *Handshake) {
 	s.Unlock()
 
 	var clients []Msg
-	var clientsID []uint64
+	var clientsID []uint
 
 	s.RLock()
 	for c := range s.Channels[client.Key] {
 		clients = append(clients, c.AsMap())
-		clientsID = append(clientsID, c.Id)
+		clientsID = append(clientsID, c.ID)
 	}
 	s.RUnlock()
 
@@ -239,17 +234,17 @@ func (s *Server) AddClient(client *Client, handshake *Handshake) {
 
 	s.SendMsgToChannel(client, Msg{
 		"type":    "client_joined",
-		"user_id": client.Id,
+		"user_id": client.ID,
 		"client":  client.AsMap(),
 	})
 
-	s.Log.Printf("Client %d joined to channel %s as %s\n", client.Id, client.Key, client.ConnectionType)
+	s.Log.Printf("Client %d joined to channel %s as %s\n", client.ID, client.Key, client.ConnectionType)
 }
 
 func (s *Server) RemoveClient(client *Client) {
 	s.SendMsgToChannel(client, Msg{
 		"type":    "client_left",
-		"user_id": client.Id,
+		"user_id": client.ID,
 		"client":  client.AsMap(),
 	})
 
@@ -260,7 +255,7 @@ func (s *Server) RemoveClient(client *Client) {
 	}
 	s.Unlock()
 
-	s.Log.Printf("Client %d removed from channel %s\n", client.Id, client.Key)
+	s.Log.Printf("Client %d removed from channel %s\n", client.ID, client.Key)
 }
 
 func (s *Server) ChannelExist(channel string) bool {
@@ -275,11 +270,16 @@ func main() {
 	certificatePath := flag.String("cert", "server.pem", "")
 	flag.Parse()
 
+	certificate, err := tls.LoadX509KeyPair(*certificatePath, *certificatePath)
+	if err != nil {
+		log.Fatalf("Certificate loading error: %s\n", err)
+	}
+
 	server := &Server{
-		Channels:        make(map[string]Channel),
-		Addr:            *addr,
-		CertificatePath: *certificatePath,
-		Log:             log.New(os.Stdout, "", log.Ltime),
+		Channels:    make(map[string]Channel),
+		Addr:        *addr,
+		Certificate: certificate,
+		Log:         log.New(os.Stdout, "", log.Ltime),
 	}
 
 	server.Start()
