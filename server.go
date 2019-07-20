@@ -68,6 +68,7 @@ func (c *Client) Handler() {
 		case "generate_key":
 			c.Generate_key()
 		default:
+			c.Srv.Log.Printf("Unknown Type field from client %d: %s\n", c.ID, handshake.Type)
 			return
 		}
 	}
