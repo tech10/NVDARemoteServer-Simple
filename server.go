@@ -61,8 +61,8 @@ func (c *Client) Handler() {
 
 		switch handshake.Type {
 		case "join":
-			if handshake.Channel == "" {
-				c.Srv.Log.Printf("Client %d set empty channel when join to it\n", c.ID)
+			if handshake.Channel == "" || handshake.Connection_type == "" {
+				c.Srv.Log.Printf("Client %d set empty Channel or Connection_type when join to channel\n", c.ID)
 				return
 			}
 			c.Channel = handshake.Channel
