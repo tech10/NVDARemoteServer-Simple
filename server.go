@@ -24,18 +24,16 @@ type Channel map[*Client]struct{}
 
 type Handshake struct {
 	Type            string
-	Version         int
 	Channel         string
 	Connection_type string
 }
 
 type Client struct {
-	Conn            net.Conn
-	ID              uint
-	Srv             *Server
-	Key             string
-	ProtocolVersion int
-	ConnectionType  string
+	Conn           net.Conn
+	ID             uint
+	Srv            *Server
+	Key            string
+	ConnectionType string
 }
 
 func (c *Client) Handler() {
@@ -62,9 +60,6 @@ func (c *Client) Handler() {
 		}
 
 		switch handshake.Type {
-		case "protocol_version":
-			c.ProtocolVersion = handshake.Version
-			c.Srv.Log.Printf("Client %d set protocol version: %d\n", c.ID, c.ProtocolVersion)
 		case "join":
 			if handshake.Channel == "" {
 				c.Srv.Log.Printf("Client %d set empty channel when join to it\n", c.ID)
@@ -75,7 +70,6 @@ func (c *Client) Handler() {
 			c.Generate_key()
 		default:
 			c.Srv.Log.Printf("Unknown Type field from client %d: \"%s\"\n", c.ID, handshake.Type)
-			return
 		}
 	}
 }
