@@ -69,7 +69,12 @@ func (c *Client) Handler() {
 			c.Connection_type = handshake.Connection_type
 			c.Srv.AddClient(c)
 		case "generate_key":
-			c.Generate_key()
+			key := c.Srv.GenerateKey()
+			c.SendMsg(Msg{
+				"type": "generate_key",
+				"key":  key,
+			})
+			c.Srv.Log.Printf("For client %d generated key \"%s\"\n", c.ID, key)
 		default:
 			c.Srv.Log.Printf("Unknown Type field from client %d: \"%s\"\n", c.ID, handshake.Type)
 		}
@@ -83,22 +88,6 @@ func (c *Client) Close() {
 
 	c.Conn.Close()
 	c.Srv.Log.Printf("Disconnected client %d %s\n", c.ID, c.Conn.RemoteAddr())
-}
-
-func (c *Client) Generate_key() {
-	var key string
-
-	for key == "" || c.Srv.ChannelExist(key) {
-		rand.Seed(time.Now().UnixNano())
-		key = strconv.Itoa(rand.Intn(89999999) + 10000000)
-	}
-
-	c.SendMsg(Msg{
-		"type": "generate_key",
-		"key":  key,
-	})
-
-	c.Srv.Log.Printf("For client %d generated key \"%s\"\n", c.ID, key)
 }
 
 func (c *Client) AsMap() Msg {
@@ -254,11 +243,19 @@ func (s *Server) RemoveClient(client *Client) {
 	s.Log.Printf("Client %d removed from \"%s\" channel\n", client.ID, client.Channel)
 }
 
-func (s *Server) ChannelExist(channel string) bool {
-	s.RLock()
-	_, exist := s.Channels[channel]
-	s.RUnlock()
-	return exist
+func (s *Server) GenerateKey() (key string) {
+	for {
+		rand.Seed(time.Now().UnixNano())
+		key = strconv.Itoa(rand.Intn(89999999) + 10000000)
+
+		s.RLock()
+		_, exist := s.Channels[key]
+		s.RUnlock()
+
+		if !exist {
+			return key
+		}
+	}
 }
 
 func main() {
