@@ -29,11 +29,11 @@ type Handshake struct {
 }
 
 type Client struct {
-	Conn           net.Conn
-	ID             uint
-	Srv            *Server
-	Key            string
-	ConnectionType string
+	Conn            net.Conn
+	ID              uint
+	Srv             *Server
+	Channel         string
+	Connection_type string
 }
 
 func (c *Client) Handler() {
@@ -48,7 +48,7 @@ func (c *Client) Handler() {
 			return
 		}
 
-		if c.Key != "" {
+		if c.Channel != "" {
 			c.Srv.SendLineToChannel(c, line)
 			continue
 		}
@@ -65,7 +65,9 @@ func (c *Client) Handler() {
 				c.Srv.Log.Printf("Client %d set empty channel when join to it\n", c.ID)
 				return
 			}
-			c.Srv.AddClient(c, handshake)
+			c.Channel = handshake.Channel
+			c.Connection_type = handshake.Connection_type
+			c.Srv.AddClient(c)
 		case "generate_key":
 			c.Generate_key()
 		default:
@@ -75,7 +77,7 @@ func (c *Client) Handler() {
 }
 
 func (c *Client) Close() {
-	if c.Key != "" {
+	if c.Channel != "" {
 		c.Srv.RemoveClient(c)
 	}
 
@@ -102,7 +104,7 @@ func (c *Client) Generate_key() {
 func (c *Client) AsMap() Msg {
 	return Msg{
 		"id":              c.ID,
-		"connection_type": c.ConnectionType,
+		"connection_type": c.Connection_type,
 	}
 }
 
@@ -193,7 +195,7 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
 
 func (s *Server) SendLineToChannel(client *Client, line []byte) {
 	s.RLock()
-	for r := range s.Channels[client.Key] {
+	for r := range s.Channels[client.Channel] {
 		if client != r {
 			r.SendLine(line)
 		}
@@ -201,22 +203,19 @@ func (s *Server) SendLineToChannel(client *Client, line []byte) {
 	s.RUnlock()
 }
 
-func (s *Server) AddClient(client *Client, handshake *Handshake) {
-	client.Key = handshake.Channel
-	client.ConnectionType = handshake.Connection_type
-
+func (s *Server) AddClient(client *Client) {
 	s.Lock()
-	if s.Channels[client.Key] == nil {
-		s.Channels[client.Key] = make(Channel)
+	if s.Channels[client.Channel] == nil {
+		s.Channels[client.Channel] = make(Channel)
 	}
-	s.Channels[client.Key][client] = struct{}{}
+	s.Channels[client.Channel][client] = struct{}{}
 	s.Unlock()
 
 	var clients []Msg
 	var clientsID []uint
 
 	s.RLock()
-	for c := range s.Channels[client.Key] {
+	for c := range s.Channels[client.Channel] {
 		clients = append(clients, c.AsMap())
 		clientsID = append(clientsID, c.ID)
 	}
@@ -224,7 +223,7 @@ func (s *Server) AddClient(client *Client, handshake *Handshake) {
 
 	client.SendMsg(Msg{
 		"type":     "channel_joined",
-		"channel":  client.Key,
+		"channel":  client.Channel,
 		"user_ids": clientsID,
 		"clients":  clients,
 	})
@@ -235,7 +234,7 @@ func (s *Server) AddClient(client *Client, handshake *Handshake) {
 		"client":  client.AsMap(),
 	})
 
-	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Key, client.ConnectionType)
+	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Channel, client.Connection_type)
 }
 
 func (s *Server) RemoveClient(client *Client) {
@@ -246,13 +245,13 @@ func (s *Server) RemoveClient(client *Client) {
 	})
 
 	s.Lock()
-	delete(s.Channels[client.Key], client)
-	if len(s.Channels[client.Key]) == 0 {
-		delete(s.Channels, client.Key)
+	delete(s.Channels[client.Channel], client)
+	if len(s.Channels[client.Channel]) == 0 {
+		delete(s.Channels, client.Channel)
 	}
 	s.Unlock()
 
-	s.Log.Printf("Client %d removed from \"%s\" channel\n", client.ID, client.Key)
+	s.Log.Printf("Client %d removed from \"%s\" channel\n", client.ID, client.Channel)
 }
 
 func (s *Server) ChannelExist(channel string) bool {
