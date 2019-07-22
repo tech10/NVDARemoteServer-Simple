@@ -64,12 +64,17 @@ func (c *Client) Handler() {
 		switch handshake.Type {
 		case "protocol_version":
 			c.ProtocolVersion = handshake.Version
+			c.Srv.Log.Printf("Client %d set protocol version: %f\n", c.ID, c.ProtocolVersion)
 		case "join":
+			if handshake.Channel == "" {
+				c.Srv.Log.Printf("Client %d set empty channel when join to it\n", c.ID)
+				return
+			}
 			c.Srv.AddClient(c, handshake)
 		case "generate_key":
 			c.Generate_key()
 		default:
-			c.Srv.Log.Printf("Unknown Type field from client %d: %s\n", c.ID, handshake.Type)
+			c.Srv.Log.Printf("Unknown Type field from client %d: \"%s\"\n", c.ID, handshake.Type)
 			return
 		}
 	}
@@ -97,7 +102,7 @@ func (c *Client) Generate_key() {
 		"key":  key,
 	})
 
-	c.Srv.Log.Println("For client", c.ID, "generated key", key)
+	c.Srv.Log.Printf("For client %d generated key \"%s\"\n", c.ID, key)
 }
 
 func (c *Client) AsMap() Msg {
@@ -161,7 +166,7 @@ func (s *Server) Start() {
 
 	ln = tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, config)
 	defer ln.Close()
-	s.Log.Printf("Server successfully started on \"%s\"\n", s.Addr)
+	s.Log.Printf("Server started successfully on \"%s\"\n", s.Addr)
 
 	for {
 		conn, err := ln.Accept()
@@ -203,10 +208,6 @@ func (s *Server) SendLineToChannel(client *Client, line []byte) {
 }
 
 func (s *Server) AddClient(client *Client, handshake *Handshake) {
-	if handshake.Channel == "" {
-		return
-	}
-
 	client.Key = handshake.Channel
 	client.ConnectionType = handshake.Connection_type
 
@@ -240,7 +241,7 @@ func (s *Server) AddClient(client *Client, handshake *Handshake) {
 		"client":  client.AsMap(),
 	})
 
-	s.Log.Printf("Client %d joined to channel %s as %s\n", client.ID, client.Key, client.ConnectionType)
+	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Key, client.ConnectionType)
 }
 
 func (s *Server) RemoveClient(client *Client) {
@@ -257,7 +258,7 @@ func (s *Server) RemoveClient(client *Client) {
 	}
 	s.Unlock()
 
-	s.Log.Printf("Client %d removed from channel %s\n", client.ID, client.Key)
+	s.Log.Printf("Client %d removed from \"%s\" channel\n", client.ID, client.Key)
 }
 
 func (s *Server) ChannelExist(channel string) bool {
