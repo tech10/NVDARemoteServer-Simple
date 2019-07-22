@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	BufSize = 1024 * 4
+	BufSize         = 1024 * 4
+	KeepAlivePeriod = time.Second * 30
 )
 
 type Msg map[string]interface{}
@@ -132,7 +133,7 @@ func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(2 * time.Minute)
+	tc.SetKeepAlivePeriod(KeepAlivePeriod)
 	return tc, nil
 }
 
