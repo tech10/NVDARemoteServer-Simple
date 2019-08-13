@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	BufSize         = 1024 * 4
+	BufSize         = 2048
 	KeepAlivePeriod = time.Second * 30
 )
 
