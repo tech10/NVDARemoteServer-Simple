@@ -111,8 +111,7 @@ func (c *Client) SendMsg(msg Msg) {
 		panic(err)
 	}
 
-	line = append(line, '\n')
-	c.SendLine(line)
+	c.SendLine(append(line, '\n'))
 }
 
 func (c *Client) SendLine(line []byte) {
@@ -186,8 +185,7 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
 		panic(err)
 	}
 
-	line = append(line, '\n')
-	s.SendLineToChannel(client, line)
+	s.SendLineToChannel(client, append(line, '\n'))
 }
 
 func (s *Server) SendLineToChannel(client *Client, line []byte) {
