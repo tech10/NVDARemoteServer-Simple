@@ -17,6 +17,7 @@ import (
 const (
 	BufSize         = 2048
 	KeepAlivePeriod = time.Second * 30
+	Delimiter       = '\n'
 )
 
 type Msg map[string]interface{}
@@ -42,7 +43,7 @@ func (c *Client) Handler() {
 	defer c.Close()
 
 	for {
-		line, err := buffer.ReadSlice('\n')
+		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && err != bufio.ErrBufferFull {
 			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
 			return
@@ -85,7 +86,6 @@ func (c *Client) Close() {
 	if c.Channel != "" {
 		c.Srv.RemoveClient(c)
 	}
-
 	c.Conn.Close()
 	c.Srv.Log.Printf("Disconnected client %d %s\n", c.ID, c.Conn.RemoteAddr())
 }
@@ -102,8 +102,7 @@ func (c *Client) SendMsg(msg Msg) {
 	if err != nil {
 		panic(err)
 	}
-
-	line = append(line, '\n')
+	line = append(line, Delimiter)
 	c.SendLine(line)
 }
 
@@ -177,8 +176,7 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
 	if err != nil {
 		panic(err)
 	}
-
-	line = append(line, '\n')
+	line = append(line, Delimiter)
 	s.SendLineToChannel(client, line)
 }
 
