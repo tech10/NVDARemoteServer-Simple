@@ -203,8 +203,10 @@ func (s *Server) AddClient(client *Client) {
 
 	s.RLock()
 	for c := range s.Channels[client.Channel] {
-		clients = append(clients, c.AsMap())
-		clientsID = append(clientsID, c.ID)
+		if c != client {
+			clients = append(clients, c.AsMap())
+			clientsID = append(clientsID, c.ID)
+		}
 	}
 	s.RUnlock()
 
