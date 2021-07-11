@@ -39,17 +39,25 @@ type Client struct {
 func (c *Client) Handler() {
 	c.Srv.Log.Printf("Connected client %d %s\n", c.ID, c.Conn.RemoteAddr())
 	buffer := bufio.NewReaderSize(c.Conn, BufSize)
+	msg := Msg{}
+
 	defer c.Close()
 
 	for {
-		line, err := buffer.ReadSlice('\n')
+		line, err := buffer.ReadBytes('\n')
 		if err != nil && err != bufio.ErrBufferFull {
 			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
 			return
 		}
 
 		if c.Channel != "" {
-			c.Srv.SendLineToChannel(c, line)
+			if err := json.Unmarshal(line, &msg); err != nil {
+				c.Srv.Log.Printf("JSON data of client %d: %s\n", c.ID, err)
+				return
+			}
+			msg["origin"] = c.ID
+			c.Srv.SendMsgToChannel(c, msg)
+			msg = Msg{}
 			continue
 		}
 
@@ -103,8 +111,7 @@ func (c *Client) SendMsg(msg Msg) {
 		panic(err)
 	}
 
-	line = append(line, '\n')
-	c.SendLine(line)
+	c.SendLine(append(line, '\n'))
 }
 
 func (c *Client) SendLine(line []byte) {
@@ -122,8 +129,8 @@ func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(KeepAlivePeriod)
+	_ = tc.SetKeepAlive(true)
+	_ = tc.SetKeepAlivePeriod(KeepAlivePeriod)
 	return tc, nil
 }
 
@@ -140,8 +147,8 @@ func (s *Server) Start() {
 
 	config := &tls.Config{
 		Certificates:             []tls.Certificate{s.Certificate},
-		PreferServerCipherSuites: true,
-		MinVersion:               tls.VersionTLS12,
+		PreferServerCipherSuites: false,
+		MaxVersion:               tls.VersionTLS12,
 	}
 
 	ln, err := net.Listen("tcp", s.Addr)
@@ -178,8 +185,7 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
 		panic(err)
 	}
 
-	line = append(line, '\n')
-	s.SendLineToChannel(client, line)
+	s.SendLineToChannel(client, append(line, '\n'))
 }
 
 func (s *Server) SendLineToChannel(client *Client, line []byte) {
@@ -205,6 +211,9 @@ func (s *Server) AddClient(client *Client) {
 
 	s.RLock()
 	for c := range s.Channels[client.Channel] {
+		if c.ID == client.ID {
+			continue
+		}
 		clients = append(clients, c.AsMap())
 		clientsID = append(clientsID, c.ID)
 	}
@@ -213,6 +222,7 @@ func (s *Server) AddClient(client *Client) {
 	client.SendMsg(Msg{
 		"type":     "channel_joined",
 		"channel":  client.Channel,
+		"origin":   client.ID,
 		"user_ids": clientsID,
 		"clients":  clients,
 	})
