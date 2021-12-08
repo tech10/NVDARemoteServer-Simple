@@ -20,8 +20,10 @@ const (
 	Delimiter       = '\n'
 )
 
-type Msg map[string]interface{}
-type Channel map[*Client]struct{}
+type (
+	Msg     map[string]interface{}
+	Channel map[*Client]struct{}
+)
 
 type Handshake struct {
 	Type            string
