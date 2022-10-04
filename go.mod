@@ -1,3 +1,3 @@
-module github.com/kvark128/NVDARemoteServer
+module github.com/tech10/NVDARemoteServer-Simple
 
 go 1.16
