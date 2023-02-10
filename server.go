@@ -247,7 +247,6 @@ func (s *Server) RemoveClient(client *Client) {
 
 func (s *Server) GenerateKey() (key string) {
 	for {
-		rand.Seed(time.Now().UnixNano())
 		key = strconv.Itoa(rand.Intn(89999999) + 10000000)
 
 		s.RLock()
