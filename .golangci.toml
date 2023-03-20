@@ -34,6 +34,7 @@
     "nolintlint",
     "prealloc",
     "predeclared",
+    "revive",
     "staticcheck",
     "stylecheck",
     "typecheck",
