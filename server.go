@@ -26,17 +26,17 @@ type (
 )
 
 type Handshake struct {
-	Type            string
-	Channel         string
-	Connection_type string
+	Type           string
+	Channel        string
+	ConnectionType string
 }
 
 type Client struct {
-	Conn            net.Conn
-	ID              uint
-	Srv             *Server
-	Channel         string
-	Connection_type string
+	Conn           net.Conn
+	ID             uint
+	Srv            *Server
+	Channel        string
+	ConnectionType string
 }
 
 func (c *Client) Handler() {
@@ -64,12 +64,12 @@ func (c *Client) Handler() {
 
 		switch handshake.Type {
 		case "join":
-			if handshake.Channel == "" || handshake.Connection_type == "" {
-				c.Srv.Log.Printf("Client %d set empty Channel or Connection_type when join to channel\n", c.ID)
+			if handshake.Channel == "" || handshake.ConnectionType == "" {
+				c.Srv.Log.Printf("Client %d set empty Channel or ConnectionType when join to channel\n", c.ID)
 				return
 			}
 			c.Channel = handshake.Channel
-			c.Connection_type = handshake.Connection_type
+			c.ConnectionType = handshake.ConnectionType
 			c.Srv.AddClient(c)
 		case "generate_key":
 			key := c.Srv.GenerateKey()
@@ -97,7 +97,7 @@ func (c *Client) Close() {
 func (c *Client) AsMap() Msg {
 	return Msg{
 		"id":              c.ID,
-		"connection_type": c.Connection_type,
+		"connection_type": c.ConnectionType,
 	}
 }
 
@@ -227,7 +227,7 @@ func (s *Server) AddClient(client *Client) {
 		"client":  client.AsMap(),
 	})
 
-	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Channel, client.Connection_type)
+	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Channel, client.ConnectionType)
 }
 
 func (s *Server) RemoveClient(client *Client) {
