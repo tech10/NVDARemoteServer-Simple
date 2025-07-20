@@ -59,7 +59,7 @@ func (c *Client) Handler() {
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
-			c.Srv.Log.Printf("JSON data of client %d: %s\n", c.ID, err)
+			c.Srv.Log.Printf("Invalid JSON data from client %d: %s\n", c.ID, err)
 			return
 		}
 
@@ -105,7 +105,8 @@ func (c *Client) AsMap() Msg {
 func (c *Client) SendMsg(msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
-		panic(err)
+		c.Srv.Log.Printf("Invalid data type, failed to send MSG to client: %d\n", c.ID)
+		return
 	}
 	line = append(line, Delimiter)
 	c.SendLine(line)
@@ -183,7 +184,7 @@ func (s *Server) Start() {
 func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
-		panic(err)
+		s.Log.Printf("Invalid MSG sent to channel from client: %d, %s\n", client.ID, err)
 	}
 	line = append(line, Delimiter)
 	s.SendLineToChannel(client, line)
