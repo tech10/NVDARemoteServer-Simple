@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"flag"
 	"log"
 	"math/rand"
@@ -46,7 +47,7 @@ func (c *Client) Handler() {
 
 	for {
 		line, err := buffer.ReadSlice(Delimiter)
-		if err != nil && err != bufio.ErrBufferFull {
+		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
 			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
 			return
 		}
@@ -125,8 +126,8 @@ func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(KeepAlivePeriod)
+	_ = tc.SetKeepAlive(true)
+	_ = tc.SetKeepAlivePeriod(KeepAlivePeriod)
 	return tc, nil
 }
 
@@ -152,7 +153,11 @@ func (s *Server) Start() {
 		s.Log.Fatalf("Listener error on %s: %s\n", s.Addr, err)
 	}
 
-	ln = tls.NewListener(tcpKeepAliveListener{ln.(*net.TCPListener)}, config)
+	tcpLn, ok := ln.(*net.TCPListener)
+	if !ok {
+		s.Log.Fatal("listener is not a TCP listener\n")
+	}
+	ln = tls.NewListener(tcpKeepAliveListener{tcpLn}, config)
 	defer ln.Close()
 	s.Log.Printf("Server started successfully on \"%s\"\n", s.Addr)
 
