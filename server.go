@@ -21,6 +21,8 @@ const (
 	Delimiter       = '\n'
 )
 
+var addr string
+
 type (
 	Msg     map[string]interface{}
 	Channel map[*Client]struct{}
@@ -268,18 +270,27 @@ func (s *Server) GenerateKey() (key string) {
 }
 
 func main() {
-	addr := flag.String("addr", ":6837", "")
-	certificatePath := flag.String("cert", "server.pem", "")
+	flag.StringVar(&addr, "addr", ":6837", "Provide the server with a listening address.")
+	flag.StringVar(&certificatePath, "cert", "server.pem", "Provide the server with a certificate file to load, containing the private key and certificate in .pem format.")
+	flag.BoolVar(&certificateGen, "gencert", false, "Allow the server to automatically generate a certificate. (default false)")
 	flag.Parse()
 
-	certificate, err := tls.LoadX509KeyPair(*certificatePath, *certificatePath)
-	if err != nil {
-		log.Fatalf("Certificate loading error: %s\n", err)
+	var certificate tls.Certificate
+	var certerr error
+
+	if !certificateGen {
+		certificate, certerr = tls.LoadX509KeyPair(certificatePath, certificatePath)
+	} else {
+		certificate, certerr = gen_cert()
+	}
+
+	if certerr != nil {
+		log.Fatalf("Certificate loading error: %s\n", certerr)
 	}
 
 	server := &Server{
 		Channels:    make(map[string]Channel),
-		Addr:        *addr,
+		Addr:        addr,
 		Certificate: certificate,
 		Log:         log.New(os.Stdout, "", log.Ltime),
 	}
