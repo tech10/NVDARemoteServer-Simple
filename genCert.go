@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"log"
 	"math/big"
+	"net"
 	"os"
 	"time"
 )
@@ -23,7 +25,8 @@ var (
 
 // Generate a self-signed certificate as long as the server is running.
 func serialNumber() *big.Int {
-	serialNum, serialErr := rand.Int(rand.Reader, big.NewInt(9223372036854775807))
+	serialNumLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNum, serialErr := rand.Int(rand.Reader, serialNumLimit)
 	if serialErr != nil {
 		return big.NewInt(time.Now().UnixNano())
 	}
@@ -40,6 +43,8 @@ func genCert() (tls.Certificate, error) {
 			Organization: []string{"NVDARemote Server"},
 			CommonName:   "Root CA",
 		},
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 		NotBefore:             time.Now().Add(-10 * time.Second),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
@@ -51,6 +56,10 @@ func genCert() (tls.Certificate, error) {
 	if err != nil {
 		return blankCert, err
 	}
+	pubKeyBytes, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	keyID := sha1.Sum(pubKeyBytes)
+	ca.SubjectKeyId = keyID[:]
+	ca.AuthorityKeyId = keyID[:]
 	caBytes, cerr := x509.CreateCertificate(rand.Reader, ca, ca, &priv.PublicKey, priv)
 	if cerr != nil {
 		return blankCert, cerr
@@ -72,7 +81,7 @@ func genCert() (tls.Certificate, error) {
 
 	certPrivKeyPEM := new(bytes.Buffer)
 	err = pem.Encode(certPrivKeyPEM, &pem.Block{
-		Type:  "EC PRIVATE KEY",
+		Type:  "PRIVATE KEY",
 		Bytes: mpk,
 	})
 	if err != nil {
@@ -94,7 +103,7 @@ func genCertFile(file string, cert, key []byte) {
 }
 
 func fileRewrite(file string, data []byte) error {
-	w, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	w, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return errors.New("Unable to create or open the file " + file + "\n" + err.Error())
 	}
