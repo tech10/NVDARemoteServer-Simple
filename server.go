@@ -51,17 +51,20 @@ func (c *Client) Handler() {
 		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
 			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
+
 			return
 		}
 
 		if c.Channel != "" {
 			c.Srv.SendLineToChannel(c, line)
+
 			continue
 		}
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
 			c.Srv.Log.Printf("Invalid JSON data from client %d: %s\n", c.ID, err)
+
 			return
 		}
 
@@ -69,6 +72,7 @@ func (c *Client) Handler() {
 		case "join":
 			if handshake.Channel == "" || handshake.ConnectionType == "" {
 				c.Srv.Log.Printf("Client %d set empty Channel or ConnectionType when join to channel\n", c.ID)
+
 				return
 			}
 			c.Channel = handshake.Channel
@@ -108,6 +112,7 @@ func (c *Client) SendMsg(msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
 		c.Srv.Log.Printf("Invalid data type, failed to send MSG to client: %d\n", c.ID)
+
 		return
 	}
 	line = append(line, Delimiter)
@@ -131,6 +136,7 @@ func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 	}
 	_ = tc.SetKeepAlive(true)
 	_ = tc.SetKeepAlivePeriod(KeepAlivePeriod)
+
 	return tc, nil
 }
 
@@ -168,6 +174,7 @@ func (s *Server) Start() {
 		conn, err := ln.Accept()
 		if err != nil {
 			s.Log.Printf("Server error: %s\n", err)
+
 			break
 		}
 
@@ -281,7 +288,7 @@ func main() {
 	if !certificateGen {
 		certificate, certerr = tls.LoadX509KeyPair(certificatePath, certificatePath)
 	} else {
-		certificate, certerr = gen_cert()
+		certificate, certerr = genCert()
 	}
 
 	if certerr != nil {

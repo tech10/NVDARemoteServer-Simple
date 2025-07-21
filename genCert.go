@@ -22,18 +22,19 @@ var (
 )
 
 // Generate a self-signed certificate as long as the server is running.
-func serial_number() *big.Int {
-	serial_num, serial_err := rand.Int(rand.Reader, big.NewInt(9223372036854775807))
-	if serial_err != nil {
+func serialNumber() *big.Int {
+	serialNum, serialErr := rand.Int(rand.Reader, big.NewInt(9223372036854775807))
+	if serialErr != nil {
 		return big.NewInt(time.Now().UnixNano())
 	}
-	return serial_num
+
+	return serialNum
 }
 
-func gen_cert() (tls.Certificate, error) {
+func genCert() (tls.Certificate, error) {
 	blankCert := tls.Certificate{}
 	ca := &x509.Certificate{
-		SerialNumber: serial_number(),
+		SerialNumber: serialNumber(),
 		Subject: pkix.Name{
 			Country:      []string{"US"},
 			Organization: []string{"NVDARemote Server"},
@@ -78,21 +79,21 @@ func gen_cert() (tls.Certificate, error) {
 		return blankCert, err
 	}
 
-	gen_cert_file(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
+	genCertFile(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
 
 	return tls.X509KeyPair(certPEM.Bytes(), certPrivKeyPEM.Bytes())
 }
 
-func gen_cert_file(file string, cert, key []byte) {
+func genCertFile(file string, cert, key []byte) {
 	log.Print("Attempting to write certificate to file " + file + "\n")
-	err := file_rewrite(file, append(key, cert...))
+	err := fileRewrite(file, append(key, cert...))
 	if err != nil {
 		log.Fatalf("Failed to write certificate.\n%s\n", err)
 	}
 	log.Print("Certificate and key successfully written to " + file + "\n")
 }
 
-func file_rewrite(file string, data []byte) error {
+func fileRewrite(file string, data []byte) error {
 	w, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return errors.New("Unable to create or open the file " + file + "\n" + err.Error())
@@ -106,5 +107,6 @@ func file_rewrite(file string, data []byte) error {
 	if err != nil {
 		return errors.New("The file at " + file + " was unable to close. Information may not have been written to it correctly.\n" + err.Error())
 	}
+
 	return nil
 }
