@@ -191,6 +191,7 @@ func (s *Server) Start() {
 }
 
 func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
+	msg["origin"] = client.ID
 	line, err := json.Marshal(msg)
 	if err != nil {
 		s.Log.Printf("Invalid MSG sent to channel from client: %d, %s\n", client.ID, err)
