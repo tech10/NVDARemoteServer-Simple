@@ -68,7 +68,7 @@ func (c *Client) Handler() {
 
 				continue
 			}
-			c.Srv.SendMsgToChannel(c, msgdec)
+			c.Srv.SendMsgToChannel(c, msgdec, true)
 
 			continue
 		}
@@ -208,8 +208,10 @@ func (s *Server) Start() {
 	}
 }
 
-func (s *Server) SendMsgToChannel(client *Client, msg Msg) {
-	msg["origin"] = client.ID
+func (s *Server) SendMsgToChannel(client *Client, msg Msg, sendOrigin bool) {
+	if sendOrigin {
+		msg["origin"] = client.ID
+	}
 	line, err := json.Marshal(msg)
 	if err != nil {
 		s.Log.Printf("Invalid MSG sent to channel from client: %d, %s\n", client.ID, err)
@@ -259,7 +261,7 @@ func (s *Server) AddClient(client *Client) {
 		"type":    "client_joined",
 		"user_id": client.ID,
 		"client":  client.AsMap(),
-	})
+	}, false)
 
 	s.Log.Printf("Client %d joined to \"%s\" channel as %s\n", client.ID, client.Channel, client.ConnectionType)
 }
@@ -269,7 +271,7 @@ func (s *Server) RemoveClient(client *Client) {
 		"type":    "client_left",
 		"user_id": client.ID,
 		"client":  client.AsMap(),
-	})
+	}, false)
 
 	s.Lock()
 	delete(s.Channels[client.Channel], client)
