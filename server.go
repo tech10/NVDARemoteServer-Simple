@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -52,15 +53,22 @@ func (c *Client) Handler() {
 	for {
 		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
-			c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
+			if !errors.Is(err, io.EOF) {
+				c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
+			}
 
 			return
 		}
 
 		if c.Channel != "" {
-			c.Srv.SendLineToChannel(c, line)
+			var msgdec Msg
+			if err := json.Unmarshal(line, &msgdec); err != nil {
+				c.Srv.Log.Printf("Invalid JSON data from client %d: %s\n", c.ID, err)
+				c.Srv.SendLineToChannel(c, line)
 
-			continue
+				continue
+			}
+			c.Srv.SendMsgToChannel(c, msgdec)
 		}
 
 		handshake := new(Handshake)
