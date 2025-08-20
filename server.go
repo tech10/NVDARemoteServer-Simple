@@ -26,7 +26,7 @@ const (
 var addr string
 
 type (
-	Msg     map[string]interface{}
+	Msg     map[string]any
 	Channel map[*Client]struct{}
 )
 
@@ -69,6 +69,8 @@ func (c *Client) Handler() {
 				continue
 			}
 			c.Srv.SendMsgToChannel(c, msgdec)
+
+			continue
 		}
 
 		handshake := new(Handshake)
