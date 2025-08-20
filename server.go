@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	BufSize               = 2048
+	BufSize               = 16384
 	KeepAlivePeriod       = time.Second * 30
 	WriteDeadlineDuration = time.Second * 4
 	Delimiter             = '\n'
@@ -56,7 +56,6 @@ func (c *Client) Handler() {
 			if !errors.Is(err, io.EOF) {
 				c.Srv.Log.Printf("Getting data error from client %d: %s\n", c.ID, err)
 			}
-
 			return
 		}
 
@@ -65,18 +64,15 @@ func (c *Client) Handler() {
 			if err := json.Unmarshal(line, &msgdec); err != nil {
 				c.Srv.Log.Printf("Invalid JSON data from client %d: %s\n", c.ID, err)
 				c.Srv.SendLineToChannel(c, line)
-
 				continue
 			}
 			c.Srv.SendMsgToChannel(c, msgdec, true)
-
 			continue
 		}
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
 			c.Srv.Log.Printf("Invalid JSON data from client %d: %s\n", c.ID, err)
-
 			return
 		}
 
@@ -84,7 +80,6 @@ func (c *Client) Handler() {
 		case "join":
 			if handshake.Channel == "" || handshake.ConnectionType == "" {
 				c.Srv.Log.Printf("Client %d set empty Channel or ConnectionType when join to channel\n", c.ID)
-
 				return
 			}
 			c.Channel = handshake.Channel
@@ -101,6 +96,11 @@ func (c *Client) Handler() {
 			continue
 		default:
 			c.Srv.Log.Printf("Unknown Type field from client %d: \"%s\"\n", c.ID, handshake.Type)
+			c.SendMsg(Msg{
+				"type":  "error",
+				"error": "invalid_parameters",
+			})
+			return
 		}
 	}
 }
@@ -126,7 +126,6 @@ func (c *Client) SendMsg(msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
 		c.Srv.Log.Printf("Invalid data type, failed to send MSG to client: %d\n", c.ID)
-
 		return
 	}
 	line = append(line, Delimiter)
@@ -192,7 +191,6 @@ func (s *Server) Start() {
 		conn, err := ln.Accept()
 		if err != nil {
 			s.Log.Printf("Server error: %s\n", err)
-
 			break
 		}
 
@@ -222,12 +220,12 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg, sendOrigin bool) {
 
 func (s *Server) SendLineToChannel(client *Client, line []byte) {
 	s.RLock()
+	defer s.RUnlock()
 	for r := range s.Channels[client.Channel] {
 		if client != r {
 			r.SendLine(line)
 		}
 	}
-	s.RUnlock()
 }
 
 func (s *Server) AddClient(client *Client) {
@@ -236,19 +234,17 @@ func (s *Server) AddClient(client *Client) {
 		s.Channels[client.Channel] = make(Channel)
 	}
 	s.Channels[client.Channel][client] = struct{}{}
-	s.Unlock()
 
 	var clients []Msg
 	var clientsID []uint
 
-	s.RLock()
 	for c := range s.Channels[client.Channel] {
 		if c != client {
 			clients = append(clients, c.AsMap())
 			clientsID = append(clientsID, c.ID)
 		}
 	}
-	s.RUnlock()
+	s.Unlock()
 
 	client.SendMsg(Msg{
 		"type":     "channel_joined",
@@ -285,7 +281,7 @@ func (s *Server) RemoveClient(client *Client) {
 
 func (s *Server) GenerateKey() (key string) {
 	for {
-		key = strconv.Itoa(rand.Intn(89999999) + 10000000)
+		key = strconv.Itoa(rand.Intn(90000000) + 10000000)
 
 		s.RLock()
 		_, exist := s.Channels[key]
@@ -320,7 +316,7 @@ func main() {
 		Channels:    make(map[string]Channel),
 		Addr:        addr,
 		Certificate: certificate,
-		Log:         log.New(os.Stdout, "", log.Ltime),
+		Log:         log.New(os.Stdout, "", log.LstdFlags),
 	}
 
 	server.Start()
