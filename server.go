@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	BufSize         = 2048
-	KeepAlivePeriod = time.Second * 30
-	Delimiter       = '\n'
+	BufSize               = 2048
+	KeepAlivePeriod       = time.Second * 30
+	WriteDeadlineDuration = time.Second * 4
+	Delimiter             = '\n'
 )
 
 var addr string
@@ -120,6 +121,8 @@ func (c *Client) SendMsg(msg Msg) {
 }
 
 func (c *Client) SendLine(line []byte) {
+	// Because data is sent sequentially, set a write deadline.
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
 	if _, err := c.Conn.Write(line); err != nil {
 		c.Srv.Log.Printf("Sending data error to client %d: %s\n", c.ID, err)
 	}
@@ -136,6 +139,7 @@ func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
 	}
 	_ = tc.SetKeepAlive(true)
 	_ = tc.SetKeepAlivePeriod(KeepAlivePeriod)
+	_ = tc.SetNoDelay(true)
 
 	return tc, nil
 }
