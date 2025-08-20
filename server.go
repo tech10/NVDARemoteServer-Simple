@@ -41,6 +41,7 @@ type Client struct {
 	Srv            *Server
 	Channel        string
 	ConnectionType string
+	once           sync.Once
 }
 
 func (c *Client) Handler() {
@@ -95,11 +96,13 @@ func (c *Client) Handler() {
 }
 
 func (c *Client) Close() {
-	if c.Channel != "" {
-		c.Srv.RemoveClient(c)
-	}
-	c.Conn.Close()
-	c.Srv.Log.Printf("Disconnected client %d %s\n", c.ID, c.Conn.RemoteAddr())
+	c.once.Do(func() {
+		if c.Channel != "" {
+			c.Srv.RemoveClient(c)
+		}
+		c.Conn.Close()
+		c.Srv.Log.Printf("Disconnected client %d %s\n", c.ID, c.Conn.RemoteAddr())
+	})
 }
 
 func (c *Client) AsMap() Msg {
@@ -125,6 +128,7 @@ func (c *Client) SendLine(line []byte) {
 	_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
 	if _, err := c.Conn.Write(line); err != nil {
 		c.Srv.Log.Printf("Sending data error to client %d: %s\n", c.ID, err)
+		c.Close()
 	}
 }
 
