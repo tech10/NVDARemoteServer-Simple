@@ -30,9 +30,9 @@ type (
 )
 
 type Handshake struct {
-	Type           string
-	Channel        string
-	ConnectionType string
+	Type           string `json:"type"`
+	Channel        string `json:"channel,omitempty"`
+	ConnectionType string `json:"connection_type,omitempty"`
 }
 
 type Client struct {
@@ -87,7 +87,7 @@ func (c *Client) Handler() {
 				"key":  key,
 			})
 			c.Srv.Log.Printf("For client %d generated key \"%s\"\n", c.ID, key)
-		case "version":
+		case "protocol_version":
 			continue
 		default:
 			c.Srv.Log.Printf("Unknown Type field from client %d: \"%s\"\n", c.ID, handshake.Type)
