@@ -140,7 +140,7 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 
 func (c *Client) handleChannel(line []byte) {
 	if !sendOrigin {
-		c.Srv.SendLineToChannel(c, line, false)
+		c.Srv.SendLineToChannel(c, line, true)
 		return
 	}
 	var msgdec Msg
@@ -156,12 +156,12 @@ func (c *Client) sendMotd() {
 	if motd == "" {
 		return
 	}
-	msg := Msg{
+
+	c.SendMsg(Msg{
 		"type":               TypeMotd,
 		"motd":               motd,
 		TypeMotdForceDisplay: motdAlwaysDisplay,
-	}
-	c.SendMsg(msg)
+	})
 }
 
 func (c *Client) panicCatch(r any) {

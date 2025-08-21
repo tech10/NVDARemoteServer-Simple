@@ -37,7 +37,7 @@ func (s *Server) Start() {
 	}
 	ln = tls.NewListener(tcpKeepAliveListener{tcpLn}, config)
 	defer ln.Close()
-	s.Log.Printf("Server started successfully on \"%s\"\n", s.Addr)
+	s.Log.Printf("Server started successfully on \"%s\"\n", ln.Addr())
 
 	for {
 		conn, err := ln.Accept()
