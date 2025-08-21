@@ -73,6 +73,7 @@ func (wch *writech) start() {
 		// Because data is sent sequentially, set a write deadline.
 		_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
 
+		startTime := time.Now()
 		_, err := c.Conn.Write(buf)
 		if err != nil {
 			// if writing fails, log and close the writer
@@ -85,5 +86,6 @@ func (wch *writech) start() {
 			}
 			return
 		}
+		c.storeWriteDuration(startTime)
 	}
 }

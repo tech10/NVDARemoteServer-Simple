@@ -8,12 +8,14 @@ import (
 	"net"
 	"runtime/debug"
 	"sync"
+	"time"
 )
 
 type Client struct {
 	Conn           net.Conn
 	closed         bool
 	mu             sync.RWMutex
+	writeDuration  time.Duration
 	ID             uint
 	Srv            *Server
 	Channel        string
@@ -32,9 +34,9 @@ func (c *Client) Close() {
 		}
 		c.Conn.Close()
 		if c.ID != 0 {
-			c.Srv.Log.Printf("Client %d disconnected.\n", c.ID)
+			c.Srv.Log.Printf("Client %d disconnected. Longest write duration was %s\n", c.ID, c.readWriteDuration())
 		} else {
-			c.Srv.Log.Printf("Client disconnected from %s\n", c.Conn.RemoteAddr())
+			c.Srv.Log.Printf("Client disconnected from %s. Longest write duration was %s\n", c.Conn.RemoteAddr(), c.readWriteDuration())
 		}
 		c.w.Close()
 	})
@@ -174,4 +176,26 @@ func (c *Client) panicCatch(r any) {
 	} else {
 		c.Srv.Log.Printf("PANIC CAUGHT: from client %s\n%v\nStack trace:\n%s\n", c.Conn.RemoteAddr(), r, trace)
 	}
+}
+
+// storeDuration stores the elapsed duration if it’s greater.
+func (c *Client) storeWriteDuration(start time.Time) {
+	if c.isClosed() {
+		return
+	}
+
+	elapsed := time.Since(start)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if elapsed > c.writeDuration {
+		c.writeDuration = elapsed
+	}
+}
+
+// readWriteDuration reads the current writeDuration.
+func (c *Client) readWriteDuration() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.writeDuration
 }
