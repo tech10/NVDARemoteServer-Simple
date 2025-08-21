@@ -24,6 +24,11 @@ func main() {
 		log.Fatalf("Certificate loading error: %s\n", certerr)
 	}
 
+	if !launch {
+		log.Printf("Launch set to false. This program will successfully exit.\n")
+		os.Exit(0)
+	}
+
 	server := &Server{
 		channels:    make(map[string]Channel),
 		Addr:        addr,
