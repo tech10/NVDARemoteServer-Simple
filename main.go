@@ -17,7 +17,7 @@ func main() {
 	if !certificateGen {
 		certificate, certerr = tls.LoadX509KeyPair(certificatePath, certificatePath)
 	} else {
-		certificate, certerr = genCert(true)
+		certificate, certerr = genCert(certificateWrite)
 	}
 
 	if certerr != nil {
