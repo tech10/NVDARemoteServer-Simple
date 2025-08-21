@@ -29,7 +29,7 @@ func serialNumber() *big.Int {
 	return serialNum
 }
 
-func genCert() (tls.Certificate, error) {
+func genCert(writeFile bool) (tls.Certificate, error) {
 	blankCert := tls.Certificate{}
 	ca := &x509.Certificate{
 		SerialNumber: serialNumber(),
@@ -83,7 +83,9 @@ func genCert() (tls.Certificate, error) {
 		return blankCert, err
 	}
 
-	genCertFile(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
+	if writeFile {
+		genCertFile(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
+	}
 
 	return tls.X509KeyPair(certPEM.Bytes(), certPrivKeyPEM.Bytes())
 }
