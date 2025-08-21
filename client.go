@@ -12,6 +12,8 @@ import (
 
 type Client struct {
 	Conn           net.Conn
+	closed         bool
+	mu             sync.RWMutex
 	ID             uint
 	Srv            *Server
 	Channel        string
@@ -22,6 +24,9 @@ type Client struct {
 
 func (c *Client) Close() {
 	c.once.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.mu.Unlock()
 		if c.Channel != "" {
 			c.Srv.removeClient(c)
 		}
@@ -62,6 +67,12 @@ func (c *Client) SendLine(line []byte) {
 	}
 }
 
+func (c *Client) isClosed() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.closed
+}
+
 func (c *Client) handler() {
 	c.Srv.Log.Printf("Client connected from %s\n", c.Conn.RemoteAddr())
 	buffer := bufio.NewReaderSize(c.Conn, ReadBufSize)
@@ -71,7 +82,7 @@ func (c *Client) handler() {
 	for {
 		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
-			if !errors.Is(err, io.EOF) {
+			if !errors.Is(err, io.EOF) && !c.isClosed() {
 				if c.ID != 0 {
 					c.Srv.Log.Printf("Read error from client %d: %v\n", c.ID, err)
 				} else {

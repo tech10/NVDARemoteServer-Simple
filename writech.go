@@ -76,10 +76,12 @@ func (wch *writech) start() {
 		_, err := c.Conn.Write(buf)
 		if err != nil {
 			// if writing fails, log and close the writer
-			if c.ID != 0 {
-				c.Srv.Log.Printf("Sending data to client %d encountered error: %v\n", c.ID, err)
-			} else {
-				c.Srv.Log.Printf("Sending data to client %s encountered error: %v\n", c.Conn.RemoteAddr(), err)
+			if !c.isClosed() {
+				if c.ID != 0 {
+					c.Srv.Log.Printf("Write error from client %d: %v\n", c.ID, err)
+				} else {
+					c.Srv.Log.Printf("Write error from client %s: %v\n", c.Conn.RemoteAddr(), err)
+				}
 			}
 			return
 		}
