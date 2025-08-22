@@ -31,10 +31,13 @@ const (
 )
 
 type (
+	// Msg is a message from or to clients.
 	Msg     map[string]any
+	// Channel is a channel type that all authorized clients share.
 	Channel map[*Client]struct{}
 )
 
+// Handshake is for authorizing a clients connection, ensuring they send valid parameters, and ensuring they are joined to a channel upon successful connection.
 type Handshake struct {
 	Type           string `json:"type"`
 	Channel        string `json:"channel,omitempty"`
