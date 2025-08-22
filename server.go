@@ -8,7 +8,6 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"time"
 )
 
 // Server provides a server using the protocol for NVDA's Remote Access feature.
@@ -73,12 +72,7 @@ func (s *Server) Start(sAddr string) error {
 			break
 		}
 
-		client := &Client{
-			conn:          conn,
-			srv:           s,
-			connectedTime: time.Now(),
-		}
-
+		client := NewClient(conn, s)
 		go client.handler()
 	}
 	return nil

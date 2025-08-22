@@ -32,7 +32,7 @@ const (
 
 type (
 	// Msg is a message from or to clients.
-	Msg     map[string]any
+	Msg map[string]any
 	// Channel is a channel type that all authorized clients share.
 	Channel map[*Client]struct{}
 )

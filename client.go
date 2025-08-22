@@ -27,6 +27,15 @@ type Client struct {
 	w              *writech
 }
 
+// NewClient creates a new client with the given net.Conn interface and server.
+func NewClient(conn net.Conn, s *Server) *Client {
+	return &Client{
+		conn:          conn,
+		srv:           s,
+		connectedTime: time.Now(),
+	}
+}
+
 // Close closes the client connection and any associated goroutines.
 func (c *Client) Close() {
 	c.once.Do(func() {
