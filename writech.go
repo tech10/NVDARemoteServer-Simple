@@ -71,17 +71,17 @@ func (wch *writech) start() {
 	defer wch.wg.Done()
 	for buf := range wch.ch {
 		// Because data is sent sequentially, set a write deadline.
-		_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
+		_ = c.conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
 
 		startTime := time.Now()
-		_, err := c.Conn.Write(buf)
+		_, err := c.conn.Write(buf)
 		if err != nil {
 			// if writing fails, log and close the writer
 			if !c.isClosed() {
-				if c.ID != 0 {
-					c.Srv.Log.Printf("Write error from client %d: %v\n", c.ID, err)
+				if c.id != 0 {
+					c.srv.Printf("Write error from client %d: %v\n", c.id, err)
 				} else {
-					c.Srv.Log.Printf("Write error from client %s: %v\n", c.Conn.RemoteAddr(), err)
+					c.srv.Printf("Write error from client %s: %v\n", c.conn.RemoteAddr(), err)
 				}
 			}
 			return

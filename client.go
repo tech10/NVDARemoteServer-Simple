@@ -11,51 +11,58 @@ import (
 	"time"
 )
 
+// Client is a connected client for the NVDA Remote Access server.
 type Client struct {
-	Conn           net.Conn
+	conn           net.Conn
 	closed         bool
 	mu             sync.RWMutex
 	writeDuration  time.Duration
-	ID             uint
-	Srv            *Server
-	Channel        string
-	ConnectionType string
+	connectedTime  time.Time
+	id             uint
+	srv            *Server
+	channel        string
+	connectionType string
+	version        int
 	once           sync.Once
 	w              *writech
 }
 
+// Close closes the client connection and any associated goroutines.
 func (c *Client) Close() {
 	c.once.Do(func() {
 		c.mu.Lock()
 		c.closed = true
 		c.mu.Unlock()
-		if c.Channel != "" {
-			c.Srv.removeClient(c)
+		if c.channel != "" {
+			c.srv.removeClient(c)
 		}
-		c.Conn.Close()
-		if c.ID != 0 {
-			c.Srv.Log.Printf("Client %d disconnected. Longest write duration was %s\n", c.ID, c.readWriteDuration())
+		c.conn.Close()
+		if c.id != 0 {
+			c.srv.Printf("Client %d disconnected. Longest write duration was %s. Client connected for %s\n", c.id, c.readWriteDuration(), c.connectedDuration())
 		} else {
-			c.Srv.Log.Printf("Client disconnected from %s. Longest write duration was %s\n", c.Conn.RemoteAddr(), c.readWriteDuration())
+			c.srv.Printf("Client disconnected from %s. Longest write duration was %s. Client connected for %s\n", c.conn.RemoteAddr(), c.readWriteDuration(), c.connectedDuration())
 		}
 		c.w.Close()
 	})
 }
 
+// AsMap returns the client id and connection type as an Msg type for encoding to a JSON value.
 func (c *Client) AsMap() Msg {
 	return Msg{
-		TypeID:             c.ID,
-		TypeConnectionType: c.ConnectionType,
+		TypeID:             c.id,
+		TypeConnectionType: c.connectionType,
 	}
 }
 
+// SendMsg decodes Msg and sends it to the client if it's valid JSON.
+// If the decoded Msg is not valid JSON, an error will be returned and no data will be sent.
 func (c *Client) SendMsg(msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
-		if c.ID != 0 {
-			c.Srv.Log.Printf("Invalid data type, failed to send MSG to client: %d. %v\n", c.ID, err)
+		if c.id != 0 {
+			c.srv.Printf("Invalid data type, failed to send MSG to client: %d. %v\n", c.id, err)
 		} else {
-			c.Srv.Log.Printf("Invalid data type, failed to send MSG to client: %s. %v\n", c.Conn.RemoteAddr(), err)
+			c.srv.Printf("Invalid data type, failed to send MSG to client: %s. %v\n", c.conn.RemoteAddr(), err)
 		}
 		return
 	}
@@ -63,6 +70,8 @@ func (c *Client) SendMsg(msg Msg) {
 	c.SendLine(line)
 }
 
+// SendLine sends the given line to the client.
+// Upon an encountered error, the clients connection is closed, disconnecting it from the server.
 func (c *Client) SendLine(line []byte) {
 	if err := c.w.Write(line); err != nil {
 		c.Close()
@@ -76,8 +85,8 @@ func (c *Client) isClosed() bool {
 }
 
 func (c *Client) handler() {
-	c.Srv.Log.Printf("Client connected from %s\n", c.Conn.RemoteAddr())
-	buffer := bufio.NewReaderSize(c.Conn, ReadBufSize)
+	c.srv.Printf("Client connected from %s\n", c.conn.RemoteAddr())
+	buffer := bufio.NewReaderSize(c.conn, ReadBufSize)
 	c.w = newWritech(c)
 	defer c.Close()
 	defer c.panicCatch(recover())
@@ -85,23 +94,23 @@ func (c *Client) handler() {
 		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
 			if !errors.Is(err, io.EOF) && !c.isClosed() {
-				if c.ID != 0 {
-					c.Srv.Log.Printf("Read error from client %d: %v\n", c.ID, err)
+				if c.id != 0 {
+					c.srv.Printf("Read error from client %d: %v\n", c.id, err)
 				} else {
-					c.Srv.Log.Printf("Read error from client %s: %v\n", c.Conn.RemoteAddr(), err)
+					c.srv.Printf("Read error from client %s: %v\n", c.conn.RemoteAddr(), err)
 				}
 			}
 			return
 		}
 
-		if c.Channel != "" {
+		if c.channel != "" {
 			c.handleChannel(line)
 			continue
 		}
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
-			c.Srv.Log.Printf("Invalid JSON data from client %s: %v\nData truncated: \"%s\"\n", c.Conn.RemoteAddr(), err, truncate(line, 12))
+			c.srv.Printf("Invalid JSON data from client %s: %v\nData truncated: \"%s\"\n", c.conn.RemoteAddr(), err, truncate(line, 12))
 			return
 		}
 		if !c.handleHandshake(handshake) {
@@ -114,33 +123,34 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 	switch handshake.Type {
 	case TypeJoin:
 		if handshake.Channel == "" || handshake.ConnectionType == "" {
-			c.Srv.Log.Printf("Client %s set empty Channel or ConnectionType with %s type\n", c.Conn.RemoteAddr(), TypeJoin)
+			c.srv.Printf("Client %s set empty Channel or ConnectionType with %s type\n", c.conn.RemoteAddr(), TypeJoin)
 			c.SendMsg(MsgErr)
 			return false
 		}
-		c.Channel = handshake.Channel
-		c.ConnectionType = handshake.ConnectionType
-		c.Srv.addClient(c)
+		c.channel = handshake.Channel
+		c.connectionType = handshake.ConnectionType
+		c.srv.addClient(c)
 		c.sendMotd()
 		return true
 	case TypeGenerateKey:
-		key := c.Srv.generateKey()
+		key := c.srv.generateKey()
 		c.SendMsg(Msg{
 			"type": TypeGenerateKey,
 			"key":  key,
 		})
-		c.Srv.Log.Printf("Client %s generated key \"%s\"\n", c.Conn.RemoteAddr(), key)
+		c.srv.Printf("Client %s generated key \"%s\"\n", c.conn.RemoteAddr(), key)
 		return true
 	case TypeProtocolVersion:
 		if handshake.Version <= 0 {
-			c.Srv.Log.Printf("Client %s is using invalid protocol version %d\n", c.Conn.RemoteAddr(), handshake.Version)
+			c.srv.Printf("Client %s is using invalid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
 			c.SendMsg(MsgErr)
 			return false
 		}
-		c.Srv.Log.Printf("Client %s is using valid protocol version %d\n", c.Conn.RemoteAddr(), handshake.Version)
+		c.srv.Printf("Client %s is using valid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
+		c.version = handshake.Version
 		return true
 	default:
-		c.Srv.Log.Printf("Client %s sent unknown type field: \"%s\"\n", c.Conn.RemoteAddr(), handshake.Type)
+		c.srv.Printf("Client %s sent unknown type field: \"%s\"\n", c.conn.RemoteAddr(), handshake.Type)
 		c.SendMsg(MsgErr)
 		return false
 	}
@@ -148,16 +158,16 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 
 func (c *Client) handleChannel(line []byte) {
 	if !sendOrigin {
-		c.Srv.SendLineToChannel(c, line, true)
+		c.srv.SendLineToChannel(c, line, true)
 		return
 	}
 	var msgdec Msg
 	if err := json.Unmarshal(line, &msgdec); err != nil {
-		c.Srv.Log.Printf("Invalid JSON data from client %d: %s\nData truncated: \"%s\"\n", c.ID, err, truncate(line, 4))
-		c.Srv.SendLineToChannel(c, line, true)
+		c.srv.Printf("Invalid JSON data from client %d: %s\nData truncated: \"%s\"\n", c.id, err, truncate(line, 4))
+		c.srv.SendLineToChannel(c, line, true)
 		return
 	}
-	c.Srv.SendMsgToChannel(c, msgdec, true)
+	c.srv.SendMsgToChannel(c, msgdec, true)
 }
 
 func (c *Client) sendMotd() {
@@ -177,10 +187,10 @@ func (c *Client) panicCatch(r any) {
 		return
 	}
 	trace := debug.Stack()
-	if c.ID != 0 {
-		c.Srv.Log.Printf("PANIC CAUGHT: from client %d\n%v\nStack trace:\n%s\n", c.ID, r, trace)
+	if c.id != 0 {
+		c.srv.Printf("PANIC CAUGHT: from client %d\n%v\nStack trace:\n%s\n", c.id, r, trace)
 	} else {
-		c.Srv.Log.Printf("PANIC CAUGHT: from client %s\n%v\nStack trace:\n%s\n", c.Conn.RemoteAddr(), r, trace)
+		c.srv.Printf("PANIC CAUGHT: from client %s\n%v\nStack trace:\n%s\n", c.conn.RemoteAddr(), r, trace)
 	}
 }
 
@@ -204,4 +214,8 @@ func (c *Client) readWriteDuration() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.writeDuration
+}
+
+func (c *Client) connectedDuration() time.Duration {
+	return time.Since(c.connectedTime)
 }

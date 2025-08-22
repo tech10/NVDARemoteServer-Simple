@@ -11,7 +11,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
 	"os"
@@ -84,19 +83,21 @@ func genCert(writeFile bool) (tls.Certificate, error) {
 	}
 
 	if writeFile {
-		genCertFile(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
+		_ = genCertFile(certificatePath, certPEM.Bytes(), certPrivKeyPEM.Bytes())
 	}
 
 	return tls.X509KeyPair(certPEM.Bytes(), certPrivKeyPEM.Bytes())
 }
 
-func genCertFile(file string, cert, key []byte) {
-	log.Printf("Attempting to write certificate to file %s\n", file)
+func genCertFile(file string, cert, key []byte) error {
+	logger.Printf("Attempting to write certificate to file %s\n", file)
 	err := fileRewrite(file, append(key, cert...))
 	if err != nil {
-		log.Fatalf("Failed to write certificate.\n%s\n", err)
+		logger.Printf("Failed to write certificate.\n%s\n", err)
+		return err
 	}
-	log.Printf("Certificate and key successfully written to %s\n", file)
+	logger.Printf("Certificate and key successfully written to %s\n", file)
+	return nil
 }
 
 func fileRewrite(file string, data []byte) error {
@@ -114,4 +115,17 @@ func fileRewrite(file string, data []byte) error {
 		return fmt.Errorf("the file at %s encountered an error on close, information may not have been written to it correctly\n%w", file, err)
 	}
 	return nil
+}
+
+// loadCert loads a certificate from a file or self-signed certificate.
+func loadCert() (tls.Certificate, error) {
+	var certificate tls.Certificate
+	var certerr error
+
+	if !certificateGen {
+		certificate, certerr = tls.LoadX509KeyPair(certificatePath, certificatePath)
+	} else {
+		certificate, certerr = genCert(certificateWrite)
+	}
+	return certificate, certerr
 }
