@@ -1,25 +1,25 @@
 package main
 
 import (
-	"flag"
 	"os"
 )
 
 func main() {
-	flags()
-	flag.Parse()
+	FlagsInit()
+
+	logger = NewLogger(logLevel)
 
 	certificate, certerr := loadCert()
 	if certerr != nil {
-		logger.Fatalf("Certificate loading error: %s\n", certerr)
+		os.Exit(1)
 	}
 
 	if !launch {
-		logger.Printf("Launch set to false. This program will successfully exit.\n")
+		logger.Warnf("Launch set to false. This program will successfully exit.\n")
 		os.Exit(0)
 	}
 
-	server := NewServer(certificate)
+	server := NewServer(certificate, logger)
 
 	err := server.Start(addr)
 	if err != nil {

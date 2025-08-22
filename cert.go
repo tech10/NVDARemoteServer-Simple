@@ -90,13 +90,13 @@ func genCert(writeFile bool) (tls.Certificate, error) {
 }
 
 func genCertFile(file string, cert, key []byte) error {
-	logger.Printf("Attempting to write certificate to file %s\n", file)
+	logger.Debugf("Attempting to write certificate to file %s\n", file)
 	err := fileRewrite(file, append(key, cert...))
 	if err != nil {
-		logger.Printf("Failed to write certificate.\n%s\n", err)
+		logger.Errorf("Failed to write certificate.\n%s\n", err)
 		return err
 	}
-	logger.Printf("Certificate and key successfully written to %s\n", file)
+	logger.Debugf("Certificate and key successfully written to %s\n", file)
 	return nil
 }
 
@@ -123,9 +123,16 @@ func loadCert() (tls.Certificate, error) {
 	var certerr error
 
 	if !certificateGen {
+		logger.Debugf("Attempting to load certificate from %s\n", certificatePath)
 		certificate, certerr = tls.LoadX509KeyPair(certificatePath, certificatePath)
 	} else {
+		logger.Debugf("Attempting to generate self-signed certificate and load into memory.\n")
 		certificate, certerr = genCert(certificateWrite)
+	}
+	if certerr == nil {
+		logger.Debugf("Certificate successfully loaded.\n")
+	} else {
+		logger.Errorf("Unable to load certificate: %v\n", certerr)
 	}
 	return certificate, certerr
 }

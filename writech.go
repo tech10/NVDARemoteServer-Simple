@@ -21,6 +21,7 @@ func newWritech(c *Client) *writech {
 		c:  c,
 		ch: make(chan []byte, WriteBufSize),
 	}
+	c.srv.l.Debugf("Write buffer created for client %s: size %d.\n", c.value(), WriteBufSize)
 	wch.wg.Add(1)
 	go wch.start()
 	return wch
@@ -29,6 +30,7 @@ func newWritech(c *Client) *writech {
 func (wch *writech) Close() {
 	wch.once.Do(func() {
 		wch.mu.Lock()
+		c := wch.c
 		wch.closed = true
 		close(wch.ch)
 		wch.mu.Unlock()
@@ -38,6 +40,7 @@ func (wch *writech) Close() {
 		wch.mu.Lock()
 		wch.ch = nil
 		wch.mu.Unlock()
+		c.srv.l.Debugf("Write buffer for client %s closed.\n", c.value())
 	})
 }
 
@@ -51,6 +54,7 @@ func (wch *writech) Write(p []byte) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = net.ErrClosed
+			wch.c.srv.l.Debugf("Panic caught for client %s: %s\n", wch.c.value(), r)
 		}
 	}()
 
@@ -66,23 +70,23 @@ func (wch *writech) isClosed() bool {
 
 func (wch *writech) start() {
 	c := wch.c
+	c.srv.l.Debugf("Write channel for client %s opened.\n", c.value())
 	defer c.Close()
 	defer wch.Close()
 	defer wch.wg.Done()
 	for buf := range wch.ch {
+		c.srv.l.Interceptf("Sent data to client %s\n%s\n", c.value(), buf)
 		// Because data is sent sequentially, set a write deadline.
-		_ = c.conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
-
+		deadlineErr := c.conn.SetWriteDeadline(time.Now().Add(WriteDeadlineDuration))
+		if deadlineErr != nil {
+			c.srv.l.Errorf("SetWriteDeadline failed for client %s: %v\n", c.value(), deadlineErr)
+		}
 		startTime := time.Now()
 		_, err := c.conn.Write(buf)
 		if err != nil {
 			// if writing fails, log and close the writer
 			if !c.isClosed() {
-				if c.id != 0 {
-					c.srv.Printf("Write error from client %d: %v\n", c.id, err)
-				} else {
-					c.srv.Printf("Write error from client %s: %v\n", c.conn.RemoteAddr(), err)
-				}
+				c.srv.l.Errorf("Write error from client %s: %v\n", c.value(), err)
 			}
 			return
 		}

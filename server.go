@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
-	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -12,15 +11,15 @@ import (
 
 // Server provides a server using the protocol for NVDA's Remote Access feature.
 type Server struct {
-	log      *log.Logger
+	l        *Logger
 	cfg      *tls.Config
 	mu       sync.RWMutex
 	channels map[string]Channel
 	nextID   uint
 }
 
-// NewServer creates a server with the provided tls certificate.
-func NewServer(cert tls.Certificate) *Server {
+// NewServer creates a server with the provided tls certificate and Logger.
+func NewServer(cert tls.Certificate, l *Logger) *Server {
 	cfg := &tls.Config{
 		Certificates:             []tls.Certificate{cert},
 		PreferServerCipherSuites: true,
@@ -29,46 +28,41 @@ func NewServer(cert tls.Certificate) *Server {
 
 	return &Server{
 		cfg:      cfg,
-		log:      logger,
+		l:        l,
 		channels: make(map[string]Channel),
-	}
-}
-
-// Printf prints to the internal logger.
-func (s *Server) Printf(format string, v ...any) {
-	if s.log != nil {
-		s.log.Printf(format, v...)
 	}
 }
 
 // Start starts the server with the provided listen address.
 // This can be called multiple times from different listen addresses.
 func (s *Server) Start(sAddr string) error {
+	s.l.Debugf("Attempting to start server with listen address %s\n", sAddr)
 	ln, err := net.Listen("tcp", sAddr)
 	if err != nil {
-		s.Printf("Listener error on %s: %s\n", sAddr, err)
+		s.l.Errorf("Listener error on %s: %s\n", sAddr, err)
 		return err
 	}
 
 	tcpLn, ok := ln.(*net.TCPListener)
 	if !ok {
-		s.Printf("listener is not a TCP listener\n")
+		s.l.Errorf("listener is not a TCP listener\n")
 		return ErrNotTCP
 	}
 
 	if s.cfg == nil {
-		s.Printf("listener is not a TLS listener\n")
+		s.l.Errorf("listener is not a TLS listener\n")
 		return ErrNotTLS
 	}
 
 	ln = tls.NewListener(tcpKeepAliveListener{tcpLn}, s.cfg)
 	defer ln.Close()
-	s.Printf("Server started successfully on \"%s\"\n", ln.Addr())
+	defer s.l.Debugf("Server closed at listening address %s\n", ln.Addr())
+	s.l.Infof("Server started successfully at listening address %s\n", ln.Addr())
 
 	for {
 		conn, connErr := ln.Accept()
 		if connErr != nil {
-			s.Printf("Server error: %s\n", connErr)
+			s.l.Errorf("Unable to accept connection at %s: %s\n", ln.Addr(), connErr)
 			break
 		}
 
@@ -87,7 +81,7 @@ func (s *Server) SendMsgToChannel(client *Client, msg Msg, encOrigin bool) {
 	}
 	line, err := json.Marshal(msg)
 	if err != nil {
-		s.Printf("Invalid MSG sent to channel from client: %d, %s\n", client.id, err)
+		s.l.Errorf("Invalid Msg type sent to channel from client: %s: %s\n", client.value(), err)
 	}
 	line = append(line, Delimiter)
 	s.SendLineToChannel(client, line, encOrigin) // encOrigin is the value of sendNotConnected in this call
@@ -101,8 +95,10 @@ func (s *Server) SendLineToChannel(client *Client, line []byte, sendNotConnected
 	var sent bool
 	_, exist := s.channels[client.channel]
 	if !exist {
+		s.l.Interceptf("Attempted to send data to non-existent channel \"%s\"\nData: %s", client.channel, line)
 		return
 	}
+	count := 0
 	for c := range s.channels[client.channel] {
 		if client != c && client.connectionType != c.connectionType {
 			c.SendLine(line)
@@ -110,6 +106,9 @@ func (s *Server) SendLineToChannel(client *Client, line []byte, sendNotConnected
 				sent = true
 			}
 		}
+	}
+	if count > 0 {
+		s.l.Debugf("Data sent to client count %d in channel \"%s\"\n", count, client.channel)
 	}
 	if !sent && sendNotConnected && client.connectionType == TypeController {
 		client.SendMsg(MsgNotConnected)
@@ -127,6 +126,7 @@ func (s *Server) addClient(client *Client) {
 	s.mu.Lock()
 	if s.channels[client.channel] == nil {
 		s.channels[client.channel] = make(Channel)
+		s.l.Debugf("Channel created: \"%s\"\n", client.channel)
 	}
 	s.channels[client.channel][client] = struct{}{}
 
@@ -148,16 +148,22 @@ func (s *Server) addClient(client *Client) {
 		TypeClients: clients,
 	})
 
-	s.Printf("Client %s joined channel \"%s\" with connection type %s and received ID %d\n", client.conn.RemoteAddr(), client.channel, client.connectionType, client.id)
+	if s.l.level >= LogLevelDebug {
+		s.l.Debugf("Client %s joined channel \"%s\" with connection type %s and received ID %d.\n", client.conn.RemoteAddr(), client.channel, client.connectionType, client.id)
+	} else {
+		s.l.Warnf("Client %s received ID %d.\n", client.conn.RemoteAddr(), client.id)
+	}
 }
 
 func (s *Server) removeClient(client *Client) {
 	send := true
 	s.mu.Lock()
 	delete(s.channels[client.channel], client)
+	s.l.Debugf("Client %s left channel \"%s\"\n", client.value(), client.channel)
 	if len(s.channels[client.channel]) == 0 {
 		delete(s.channels, client.channel)
 		send = false
+		s.l.Debugf("Channel removed: \"%s\"\n", client.channel)
 	}
 	s.mu.Unlock()
 
@@ -168,21 +174,21 @@ func (s *Server) removeClient(client *Client) {
 			TypeClient: client.AsMap(),
 		}, false)
 	}
-
-	s.Printf("Client %d left channel \"%s\"\n", client.id, client.channel)
 }
 
 func (s *Server) generateKey() (key string) {
 	for {
 		key = strconv.Itoa(rand.Intn(90000000) + 10000000)
-
+		s.l.Debugf("Generated channel key: \"%s\"\n", key)
 		s.mu.RLock()
 		_, exist := s.channels[key]
 		s.mu.RUnlock()
 
 		if !exist {
+			s.l.Debugf("Channel key does not exist, sending to client.")
 			return key
 		}
+		s.l.Debugf("Channel key exists, generating a new key.")
 	}
 }
 
@@ -190,5 +196,6 @@ func (s *Server) getNextID() uint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nextID++
+	s.l.Debugf("Next ID retrieved: %d\n", s.nextID)
 	return s.nextID
 }

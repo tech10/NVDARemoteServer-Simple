@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -29,6 +30,7 @@ type Client struct {
 
 // NewClient creates a new client with the given net.Conn interface and server.
 func NewClient(conn net.Conn, s *Server) *Client {
+	s.l.Warnf("Client %s connected.\n", conn.RemoteAddr())
 	return &Client{
 		conn:          conn,
 		srv:           s,
@@ -46,12 +48,8 @@ func (c *Client) Close() {
 			c.srv.removeClient(c)
 		}
 		c.conn.Close()
-		if c.id != 0 {
-			c.srv.Printf("Client %d disconnected. Longest write duration was %s. Client connected for %s\n", c.id, c.readWriteDuration(), c.connectedDuration())
-		} else {
-			c.srv.Printf("Client disconnected from %s. Longest write duration was %s. Client connected for %s\n", c.conn.RemoteAddr(), c.readWriteDuration(), c.connectedDuration())
-		}
 		c.w.Close()
+		c.srv.l.Warnf("Client %s disconnected. Longest write duration was %s. Client was connected for %s\n", c.value(), c.readWriteDuration(), c.connectedDuration())
 	})
 }
 
@@ -68,11 +66,7 @@ func (c *Client) AsMap() Msg {
 func (c *Client) SendMsg(msg Msg) {
 	line, err := json.Marshal(msg)
 	if err != nil {
-		if c.id != 0 {
-			c.srv.Printf("Invalid data type, failed to send MSG to client: %d. %v\n", c.id, err)
-		} else {
-			c.srv.Printf("Invalid data type, failed to send MSG to client: %s. %v\n", c.conn.RemoteAddr(), err)
-		}
+		c.srv.l.Errorf("Invalid data type, failed to send Msg type to client %s: %v\n", c.value(), err)
 		return
 	}
 	line = append(line, Delimiter)
@@ -94,8 +88,8 @@ func (c *Client) isClosed() bool {
 }
 
 func (c *Client) handler() {
-	c.srv.Printf("Client connected from %s\n", c.conn.RemoteAddr())
 	buffer := bufio.NewReaderSize(c.conn, ReadBufSize)
+	c.srv.l.Debugf("Read buffer created for client %s: size %d.\n", c.value(), ReadBufSize)
 	c.w = newWritech(c)
 	defer c.Close()
 	defer c.panicCatch(recover())
@@ -103,14 +97,12 @@ func (c *Client) handler() {
 		line, err := buffer.ReadSlice(Delimiter)
 		if err != nil && !errors.Is(err, bufio.ErrBufferFull) {
 			if !errors.Is(err, io.EOF) && !c.isClosed() {
-				if c.id != 0 {
-					c.srv.Printf("Read error from client %d: %v\n", c.id, err)
-				} else {
-					c.srv.Printf("Read error from client %s: %v\n", c.conn.RemoteAddr(), err)
-				}
+				c.srv.l.Errorf("Read error from client %s: %v\n", c.value(), err)
 			}
 			return
 		}
+
+		c.srv.l.Interceptf("Received data from client %s\n%s\n", c.value(), line)
 
 		if c.channel != "" {
 			c.handleChannel(line)
@@ -119,10 +111,11 @@ func (c *Client) handler() {
 
 		handshake := new(Handshake)
 		if err := json.Unmarshal(line, handshake); err != nil {
-			c.srv.Printf("Invalid JSON data from client %s: %v\nData truncated: \"%s\"\n", c.conn.RemoteAddr(), err, truncate(line, 12))
+			c.srv.l.Debugf("Invalid JSON data from client %s: %v\nData truncated: \"%s\"\n", c.value(), err, truncate(line, 12))
 			return
 		}
 		if !c.handleHandshake(handshake) {
+			c.srv.l.Debugf("Invalid handshake from client %s\n", c.value())
 			return
 		}
 	}
@@ -132,7 +125,7 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 	switch handshake.Type {
 	case TypeJoin:
 		if handshake.Channel == "" || handshake.ConnectionType == "" {
-			c.srv.Printf("Client %s set empty Channel or ConnectionType with %s type\n", c.conn.RemoteAddr(), TypeJoin)
+			c.srv.l.Errorf("Client %s set empty Channel or connection type with %s type.\n", c.value(), TypeJoin)
 			c.SendMsg(MsgErr)
 			return false
 		}
@@ -143,23 +136,23 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 		return true
 	case TypeGenerateKey:
 		key := c.srv.generateKey()
+		c.srv.l.Debugf("Client %s generated key \"%s\"\n", c.value(), key)
 		c.SendMsg(Msg{
 			"type": TypeGenerateKey,
 			"key":  key,
 		})
-		c.srv.Printf("Client %s generated key \"%s\"\n", c.conn.RemoteAddr(), key)
 		return true
 	case TypeProtocolVersion:
 		if handshake.Version <= 0 {
-			c.srv.Printf("Client %s is using invalid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
+			c.srv.l.Debugf("Client %s is using invalid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
 			c.SendMsg(MsgErr)
 			return false
 		}
-		c.srv.Printf("Client %s is using valid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
+		c.srv.l.Debugf("Client %s is using valid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
 		c.version = handshake.Version
 		return true
 	default:
-		c.srv.Printf("Client %s sent unknown type field: \"%s\"\n", c.conn.RemoteAddr(), handshake.Type)
+		c.srv.l.Errorf("Client %s sent unknown type field: \"%s\"\n", c.value(), handshake.Type)
 		c.SendMsg(MsgErr)
 		return false
 	}
@@ -172,7 +165,7 @@ func (c *Client) handleChannel(line []byte) {
 	}
 	var msgdec Msg
 	if err := json.Unmarshal(line, &msgdec); err != nil {
-		c.srv.Printf("Invalid JSON data from client %d: %s\nData truncated: \"%s\"\n", c.id, err, truncate(line, 4))
+		c.srv.l.Debugf("Invalid JSON data from client %s: %s\nData truncated: \"%s\"\n", c.value(), err, truncate(line, 4))
 		c.srv.SendLineToChannel(c, line, true)
 		return
 	}
@@ -180,14 +173,31 @@ func (c *Client) handleChannel(line []byte) {
 }
 
 func (c *Client) sendMotd() {
-	if motd == "" {
+	var fmotd string
+	level := c.srv.l.level
+	display := motdAlwaysDisplay
+	if level >= LogLevelDebug {
+		display = true
+		fmotd = "This server is running with its log level set to " + level.String() + ". Channel information "
+		if level >= LogLevelIntercept {
+			fmotd += "and protocol data"
+		}
+		fmotd += " is being intercepted."
+		if motd != "" {
+			fmotd += "\n" + motd
+		}
+	} else {
+		fmotd = motd
+	}
+
+	if fmotd == "" {
 		return
 	}
 
 	c.SendMsg(Msg{
 		"type":               TypeMotd,
-		"motd":               motd,
-		TypeMotdForceDisplay: motdAlwaysDisplay,
+		"motd":               fmotd,
+		TypeMotdForceDisplay: display,
 	})
 }
 
@@ -196,11 +206,7 @@ func (c *Client) panicCatch(r any) {
 		return
 	}
 	trace := debug.Stack()
-	if c.id != 0 {
-		c.srv.Printf("PANIC CAUGHT: from client %d\n%v\nStack trace:\n%s\n", c.id, r, trace)
-	} else {
-		c.srv.Printf("PANIC CAUGHT: from client %s\n%v\nStack trace:\n%s\n", c.conn.RemoteAddr(), r, trace)
-	}
+	c.srv.l.Errorf("PANIC CAUGHT: from client %s\n%v\nStack trace:\n%s\n", c.value(), r, trace)
 }
 
 // storeDuration stores the elapsed duration if it’s greater.
@@ -214,6 +220,7 @@ func (c *Client) storeWriteDuration(start time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if elapsed > c.writeDuration {
+		c.srv.l.Debugf("New write duration stored for client %s: %s. Previous duration: %s\n", c.value(), elapsed, c.writeDuration)
 		c.writeDuration = elapsed
 	}
 }
@@ -227,4 +234,11 @@ func (c *Client) readWriteDuration() time.Duration {
 
 func (c *Client) connectedDuration() time.Duration {
 	return time.Since(c.connectedTime)
+}
+
+func (c *Client) value() string {
+	if c.id != 0 {
+		return strconv.FormatUint(uint64(c.id), 10)
+	}
+	return c.conn.RemoteAddr().String()
 }
