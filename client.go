@@ -132,6 +132,12 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 		c.Srv.Log.Printf("Client %s generated key \"%s\"\n", c.Conn.RemoteAddr(), key)
 		return true
 	case TypeProtocolVersion:
+		if handshake.Version <= 0 {
+			c.Srv.Log.Printf("Client %s is using invalid protocol version %d\n", c.Conn.RemoteAddr(), handshake.Version)
+			c.SendMsg(MsgErr)
+			return false
+		}
+		c.Srv.Log.Printf("Client %s is using valid protocol version %d\n", c.Conn.RemoteAddr(), handshake.Version)
 		return true
 	default:
 		c.Srv.Log.Printf("Client %s sent unknown type field: \"%s\"\n", c.Conn.RemoteAddr(), handshake.Type)

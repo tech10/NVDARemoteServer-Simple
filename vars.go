@@ -19,11 +19,11 @@ const (
 	TypeChannel          = "channel"
 	TypeClientJoined     = "client_joined"
 	TypeClientLeft       = "client_left"
-	TypeUserID           = "user_id"
 	TypeClient           = "client"
+	TypeUserID           = "user_id"
+	TypeID               = "id"
 	TypeUserIDs          = "user_ids"
 	TypeClients          = "clients"
-	TypeID               = "id"
 	TypeConnectionType   = "connection_type"
 	TypeNvdaNotConnected = "nvda_not_connected"
 	TypeController       = "master"
@@ -39,6 +39,7 @@ type Handshake struct {
 	Type           string `json:"type"`
 	Channel        string `json:"channel,omitempty"`
 	ConnectionType string `json:"connection_type,omitempty"`
+	Version        int    `json:"version,omitempty"`
 }
 
 var (
