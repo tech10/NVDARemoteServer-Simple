@@ -144,11 +144,11 @@ func (c *Client) handleHandshake(handshake *Handshake) bool {
 		return true
 	case TypeProtocolVersion:
 		if handshake.Version <= 0 {
-			c.srv.l.Debugf("Client %s is using invalid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
+			c.srv.l.Debugf("Client %s is using invalid protocol version %d\n", c.value(), handshake.Version)
 			c.SendMsg(MsgErr)
 			return false
 		}
-		c.srv.l.Debugf("Client %s is using valid protocol version %d\n", c.conn.RemoteAddr(), handshake.Version)
+		c.srv.l.Debugf("Client %s is using valid protocol version %d\n", c.value(), handshake.Version)
 		c.version = handshake.Version
 		return true
 	default:

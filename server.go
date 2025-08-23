@@ -95,7 +95,7 @@ func (s *Server) SendLineToChannel(client *Client, line []byte, sendNotConnected
 	var sent bool
 	_, exist := s.channels[client.channel]
 	if !exist {
-		s.l.Interceptf("Attempted to send data to non-existent channel \"%s\"\nData: %s", client.channel, line)
+		s.l.Interceptf("Attempted to send data to non-existent channel \"%s\"\nData: %s\n", client.channel, line)
 		return
 	}
 	count := 0
