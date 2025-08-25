@@ -56,8 +56,8 @@ func (s *Server) Start(sAddr string) error {
 
 	ln = tls.NewListener(tcpKeepAliveListener{tcpLn}, s.cfg)
 	defer ln.Close()
-	defer s.l.Debugf("Server closed at listening address %s\n", ln.Addr())
-	s.l.Infof("Server started successfully at listening address %s\n", ln.Addr())
+	defer s.l.Infof("Server stopped at listening address %s\n", ln.Addr())
+	s.l.Infof("Server started at listening address %s\n", ln.Addr())
 
 	for {
 		conn, connErr := ln.Accept()
